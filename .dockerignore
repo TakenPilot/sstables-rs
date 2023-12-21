@@ -1,0 +1,6 @@
+**/node_modules
+**/target
+.githooks
+.github
+.devcontainer
+.vscode

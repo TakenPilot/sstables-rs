@@ -1,0 +1,26 @@
+[package]
+name = "sstables"
+authors = ["Dane Stuckel <dane.stuckel@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+publish = false
+readme = "README.md"
+
+include = ["/src"]
+
+[lib]
+bench = false
+doctest = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports", "async_futures"] }
+
+[[bench]]
+name = "file_writers_bench"
+harness = false
+
+[[bench]]
+name = "file_readers_bench"
+harness = false
