@@ -85,6 +85,8 @@ where
 
 #[cfg(test)]
 mod tests {
+  use common_testing::assert;
+
   use super::*;
 
   #[test]
@@ -129,7 +131,7 @@ mod tests {
       take_byte_array::<5, _>(&mut cursor).unwrap_err().kind(),
       io::ErrorKind::UnexpectedEof
     );
-    assert_eq!(cursor.position(), 5);
+    assert::cursor_completely_consumed(&cursor);
   }
 
   #[test]

@@ -695,68 +695,70 @@ pub fn sort_unsigned_integer(indices: &mut [(u64, u64)]) {
 
 #[cfg(test)]
 mod tests {
+  use common_testing::assert;
+
   use super::*;
 
   #[test]
   fn get_embedded_value_for_u64_works() {
-    assert_eq!(get_embedded_value_for_u64(0), 0);
-    assert_eq!(get_embedded_value_for_u64(1), 1);
-    assert_eq!(get_embedded_value_for_u64(23), 23);
-    assert_eq!(get_embedded_value_for_u64(24), 24);
-    assert_eq!(get_embedded_value_for_u64(25), 24);
-    assert_eq!(get_embedded_value_for_u64(255), 24);
-    assert_eq!(get_embedded_value_for_u64(256), 25);
-    assert_eq!(get_embedded_value_for_u64(65535), 25);
-    assert_eq!(get_embedded_value_for_u64(65536), 26);
-    assert_eq!(get_embedded_value_for_u64(4294967295), 26);
-    assert_eq!(get_embedded_value_for_u64(4294967296), 27);
-    assert_eq!(get_embedded_value_for_u64(u64::MAX), 27);
+    assert::equal(get_embedded_value_for_u64(0), 0);
+    assert::equal(get_embedded_value_for_u64(1), 1);
+    assert::equal(get_embedded_value_for_u64(23), 23);
+    assert::equal(get_embedded_value_for_u64(24), 24);
+    assert::equal(get_embedded_value_for_u64(25), 24);
+    assert::equal(get_embedded_value_for_u64(255), 24);
+    assert::equal(get_embedded_value_for_u64(256), 25);
+    assert::equal(get_embedded_value_for_u64(65535), 25);
+    assert::equal(get_embedded_value_for_u64(65536), 26);
+    assert::equal(get_embedded_value_for_u64(4294967295), 26);
+    assert::equal(get_embedded_value_for_u64(4294967296), 27);
+    assert::equal(get_embedded_value_for_u64(u64::MAX), 27);
   }
 
   #[test]
   fn get_embedded_value_works() {
-    assert_eq!(get_embedded_value(0), 0);
-    assert_eq!(get_embedded_value(1), 1);
-    assert_eq!(get_embedded_value(23), 23);
-    assert_eq!(get_embedded_value(24), 24);
-    assert_eq!(get_embedded_value(25), 25);
-    assert_eq!(get_embedded_value(255), 31);
+    assert::equal(get_embedded_value(0), 0);
+    assert::equal(get_embedded_value(1), 1);
+    assert::equal(get_embedded_value(23), 23);
+    assert::equal(get_embedded_value(24), 24);
+    assert::equal(get_embedded_value(25), 25);
+    assert::equal(get_embedded_value(255), 31);
   }
 
   #[test]
   fn extended_size_from_u8_works() {
-    assert_eq!(ExtendedSize::from_u8(0), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(1), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(23), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(24), ExtendedSize::U8);
-    assert_eq!(ExtendedSize::from_u8(25), ExtendedSize::U16);
-    assert_eq!(ExtendedSize::from_u8(26), ExtendedSize::U32);
-    assert_eq!(ExtendedSize::from_u8(27), ExtendedSize::U64);
-    assert_eq!(ExtendedSize::from_u8(28), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(29), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(30), ExtendedSize::Embedded);
-    assert_eq!(ExtendedSize::from_u8(31), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(0), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(1), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(23), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(24), ExtendedSize::U8);
+    assert::equal(ExtendedSize::from_u8(25), ExtendedSize::U16);
+    assert::equal(ExtendedSize::from_u8(26), ExtendedSize::U32);
+    assert::equal(ExtendedSize::from_u8(27), ExtendedSize::U64);
+    assert::equal(ExtendedSize::from_u8(28), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(29), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(30), ExtendedSize::Embedded);
+    assert::equal(ExtendedSize::from_u8(31), ExtendedSize::Embedded);
   }
 
   #[test]
   fn extended_size_as_u8_works() {
-    assert_eq!(ExtendedSize::Embedded.as_u8(), 0);
-    assert_eq!(ExtendedSize::U8.as_u8(), 24);
-    assert_eq!(ExtendedSize::U16.as_u8(), 25);
-    assert_eq!(ExtendedSize::U32.as_u8(), 26);
-    assert_eq!(ExtendedSize::U64.as_u8(), 27);
+    assert::equal(ExtendedSize::Embedded.as_u8(), 0);
+    assert::equal(ExtendedSize::U8.as_u8(), 24);
+    assert::equal(ExtendedSize::U16.as_u8(), 25);
+    assert::equal(ExtendedSize::U32.as_u8(), 26);
+    assert::equal(ExtendedSize::U64.as_u8(), 27);
   }
 
   #[test]
   fn major_type_from_u8_works() {
-    assert_eq!(MajorType::from_u8(0 << 5), MajorType::UnsignedInteger);
-    assert_eq!(MajorType::from_u8(1 << 5), MajorType::NegativeInteger);
-    assert_eq!(MajorType::from_u8(2 << 5), MajorType::Bytes);
-    assert_eq!(MajorType::from_u8(3 << 5), MajorType::Text);
-    assert_eq!(MajorType::from_u8(4 << 5), MajorType::Array);
-    assert_eq!(MajorType::from_u8(5 << 5), MajorType::Object);
-    assert_eq!(MajorType::from_u8(6 << 5), MajorType::SemanticTag);
-    assert_eq!(MajorType::from_u8(7 << 5), MajorType::NoContentType);
+    assert::equal(MajorType::from_u8(0 << 5), MajorType::UnsignedInteger);
+    assert::equal(MajorType::from_u8(1 << 5), MajorType::NegativeInteger);
+    assert::equal(MajorType::from_u8(2 << 5), MajorType::Bytes);
+    assert::equal(MajorType::from_u8(3 << 5), MajorType::Text);
+    assert::equal(MajorType::from_u8(4 << 5), MajorType::Array);
+    assert::equal(MajorType::from_u8(5 << 5), MajorType::Object);
+    assert::equal(MajorType::from_u8(6 << 5), MajorType::SemanticTag);
+    assert::equal(MajorType::from_u8(7 << 5), MajorType::NoContentType);
   }
 
   #[test]
@@ -764,51 +766,51 @@ mod tests {
     let mut v = Vec::new();
 
     write_cbor_head(&mut v, MajorType::UnsignedInteger, 0).unwrap();
-    assert_eq!(v, vec![0]);
+    assert::equal_bytes(&v, &vec![0]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::NegativeInteger, 0).unwrap();
-    assert_eq!(v, vec![32]);
+    assert::equal_bytes(&v, &vec![32]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Bytes, 0).unwrap();
-    assert_eq!(v, vec![64]);
+    assert::equal_bytes(&v, &vec![64]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Text, 0).unwrap();
-    assert_eq!(v, vec![96]);
+    assert::equal_bytes(&v, &vec![96]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Array, 0).unwrap();
-    assert_eq!(v, vec![128]);
+    assert::equal_bytes(&v, &vec![128]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Object, 0).unwrap();
-    assert_eq!(v, vec![160]);
+    assert::equal_bytes(&v, &vec![160]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::SemanticTag, 0).unwrap();
-    assert_eq!(v, vec![192]);
+    assert::equal_bytes(&v, &vec![192]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::NoContentType, 0).unwrap();
-    assert_eq!(v, vec![224]);
+    assert::equal_bytes(&v, &vec![224]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Bytes, 40000).unwrap();
-    assert_eq!(v, vec![89, 156, 64]);
+    assert::equal_bytes(&v, &vec![89, 156, 64]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Bytes, 66000).unwrap();
-    assert_eq!(v, vec![90, 0, 1, 1, 208]);
+    assert::equal_bytes(&v, &vec![90, 0, 1, 1, 208]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Bytes, 4294967296).unwrap();
-    assert_eq!(v, vec![91, 0, 0, 0, 1, 0, 0, 0, 0]);
+    assert::equal_bytes(&v, &vec![91, 0, 0, 0, 1, 0, 0, 0, 0]);
     v.clear();
 
     write_cbor_head(&mut v, MajorType::Bytes, u64::MAX).unwrap();
-    assert_eq!(v, vec![91, 255, 255, 255, 255, 255, 255, 255, 255]);
+    assert::equal_bytes(&v, &vec![91, 255, 255, 255, 255, 255, 255, 255, 255]);
     v.clear();
   }
 
@@ -817,15 +819,15 @@ mod tests {
     let mut v = Vec::new();
 
     write_cbor_text(&mut v, "").unwrap();
-    assert_eq!(v, vec![96]);
+    assert::equal_bytes(&v, &vec![96]);
     v.clear();
 
     write_cbor_text(&mut v, "hello").unwrap();
-    assert_eq!(v, vec![101, 104, 101, 108, 108, 111]);
+    assert::equal_bytes(&v, &vec![101, 104, 101, 108, 108, 111]);
     v.clear();
 
     write_cbor_text(&mut v, "hello world").unwrap();
-    assert_eq!(v, vec![107, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]);
+    assert::equal_bytes(&v, &vec![107, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]);
     v.clear();
   }
 
@@ -834,11 +836,11 @@ mod tests {
     let mut v = Vec::new();
 
     write_cbor_bytes(&mut v, &[]).unwrap();
-    assert_eq!(v, vec![64]);
+    assert::equal_bytes(&v, &vec![64]);
     v.clear();
 
     write_cbor_bytes(&mut v, &[1, 2, 3, 4]).unwrap();
-    assert_eq!(v, vec![68, 1, 2, 3, 4]);
+    assert::equal_bytes(&v, &vec![68, 1, 2, 3, 4]);
     v.clear();
   }
 
@@ -847,51 +849,51 @@ mod tests {
     let mut v = Vec::new();
 
     write_cbor_unsigned_integer(&mut v, 0).unwrap();
-    assert_eq!(v, vec![0]);
+    assert::equal_bytes(&v, &vec![0]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 1).unwrap();
-    assert_eq!(v, vec![1]);
+    assert::equal_bytes(&v, &vec![1]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 23).unwrap();
-    assert_eq!(v, vec![23]);
+    assert::equal_bytes(&v, &vec![23]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 24).unwrap();
-    assert_eq!(v, vec![24, 24]);
+    assert::equal_bytes(&v, &vec![24, 24]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 25).unwrap();
-    assert_eq!(v, vec![24, 25]);
+    assert::equal_bytes(&v, &vec![24, 25]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 255).unwrap();
-    assert_eq!(v, vec![24, 255]);
+    assert::equal_bytes(&v, &vec![24, 255]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 256).unwrap();
-    assert_eq!(v, vec![25, 1, 0]);
+    assert::equal_bytes(&v, &vec![25, 1, 0]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 65535).unwrap();
-    assert_eq!(v, vec![25, 255, 255]);
+    assert::equal_bytes(&v, &vec![25, 255, 255]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 65536).unwrap();
-    assert_eq!(v, vec![26, 0, 1, 0, 0]);
+    assert::equal_bytes(&v, &vec![26, 0, 1, 0, 0]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 4294967295).unwrap();
-    assert_eq!(v, vec![26, 255, 255, 255, 255]);
+    assert::equal_bytes(&v, &vec![26, 255, 255, 255, 255]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, 4294967296).unwrap();
-    assert_eq!(v, vec![27, 0, 0, 0, 1, 0, 0, 0, 0]);
+    assert::equal_bytes(&v, &vec![27, 0, 0, 0, 1, 0, 0, 0, 0]);
     v.clear();
 
     write_cbor_unsigned_integer(&mut v, u64::MAX).unwrap();
-    assert_eq!(v, vec![27, 255, 255, 255, 255, 255, 255, 255, 255]);
+    assert::equal_bytes(&v, &vec![27, 255, 255, 255, 255, 255, 255, 255, 255]);
     v.clear();
   }
 
@@ -900,28 +902,28 @@ mod tests {
     let mut cursor = io::Cursor::new([0x18, 0x64]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 100);
+    assert::equal(value, 100);
   }
 
   #[test]
   fn read_cbor_u64_works() {
     let mut cursor = io::Cursor::new([0x18, 0x64]);
     let value = read_cbor_u64(&mut cursor).unwrap();
-    assert_eq!(value, 100);
+    assert::equal(value, 100);
   }
 
   #[test]
   fn read_cbor_bytes_works() {
     let mut cursor = io::Cursor::new([0x44, 0x01, 0x02, 0x03, 0x04]);
     let bytes = read_cbor_bytes(&mut cursor).unwrap();
-    assert_eq!(bytes, [1, 2, 3, 4]);
+    assert::equal_bytes(&bytes, &[1, 2, 3, 4]);
   }
 
   #[test]
   fn read_cbor_text_works() {
     let mut cursor = io::Cursor::new([0x65, 0x68, 0x65, 0x6C, 0x6C, 0x6F]);
     let text = read_cbor_text(&mut cursor).unwrap();
-    assert_eq!(text, "hello");
+    assert::equal_bytes(&text, "hello");
   }
 
   #[test]
@@ -929,12 +931,12 @@ mod tests {
     let mut cursor = io::Cursor::new([0x00]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 0);
+    assert::equal(value, 0);
 
     let mut cursor = io::Cursor::new([0x17]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 23);
+    assert::equal(value, 23);
   }
 
   #[test]
@@ -942,7 +944,7 @@ mod tests {
     let mut cursor = io::Cursor::new([0x18, 0x64]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 100);
+    assert::equal(value, 100);
   }
 
   #[test]
@@ -950,12 +952,12 @@ mod tests {
     let mut cursor = io::Cursor::new([0x19, 0x01, 0x00]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 256);
+    assert::equal(value, 256);
 
     let mut cursor = io::Cursor::new([0x19, 0xFF, 0xFF]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 65535);
+    assert::equal(value, 65535);
   }
 
   #[test]
@@ -963,12 +965,12 @@ mod tests {
     let mut cursor = io::Cursor::new([0x1A, 0x00, 0x01, 0x00, 0x00]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 65536);
+    assert::equal(value, 65536);
 
     let mut cursor = io::Cursor::new([0x1A, 0xFF, 0xFF, 0xFF, 0xFF]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 4294967295);
+    assert::equal(value, 4294967295);
   }
 
   #[test]
@@ -976,11 +978,11 @@ mod tests {
     let mut cursor = io::Cursor::new([0x1B, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, 4294967296);
+    assert::equal(value, 4294967296);
 
     let mut cursor = io::Cursor::new([0x1B, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
-    assert_eq!(value, u64::MAX);
+    assert::equal(value, u64::MAX);
   }
 }

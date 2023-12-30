@@ -1,7 +1,5 @@
 use criterion::async_executor::FuturesExecutor;
-use criterion::{
-  criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
-};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput};
 use sstables::SSTableReader;
 use std::io::Result;
 use testing::setup;
@@ -52,13 +50,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.throughput(Throughput::Bytes((size * 10) as u64));
 
     group.bench_with_input(BenchmarkId::new("sstable", size), &size, |b, &n| {
-      b.to_async(FuturesExecutor)
-        .iter(|| cbor_sstable_write_read(n));
+      b.to_async(FuturesExecutor).iter(|| cbor_sstable_write_read(n));
     });
 
     group.bench_with_input(BenchmarkId::new("indexed_sstable", size), &size, |b, &n| {
-      b.to_async(FuturesExecutor)
-        .iter(|| cbor_sstable_write_read(n));
+      b.to_async(FuturesExecutor).iter(|| cbor_sstable_write_read(n));
     });
   }
   group.finish();

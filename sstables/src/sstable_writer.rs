@@ -187,7 +187,7 @@ impl<T> SSTableWriter<T> {
 }
 
 /// Trait for appending entries to an SSTableWriter
-trait Append<T> {
+pub trait Append<T> {
   fn append(&mut self, entry: T) -> io::Result<()>;
 }
 
@@ -249,6 +249,7 @@ impl Append<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
 
 #[cfg(test)]
 mod tests {
+  use common_testing::{assert, setup};
   use std::fs;
 
   use crate::cbor::{CborSearch, CborSort};
@@ -262,8 +263,9 @@ mod tests {
 
   #[test]
   fn test_append_bytes() {
-    fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
-    fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
+    let _lock = setup::sequential();
+    setup::remove_file(TEST_FILE_NAME).unwrap();
+    setup::remove_file(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
 
@@ -272,13 +274,14 @@ mod tests {
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<Vec<u8>>::from_path(TEST_FILE_NAME).unwrap();
-    assert_eq!(reader.next().unwrap().unwrap(), b"hello");
-    assert_eq!(reader.next().unwrap().unwrap(), b"world");
-    assert!(reader.next().is_none());
+    assert::equal(reader.next(), b"hello".to_vec());
+    assert::equal(reader.next(), b"world".as_slice());
+    assert::none(&reader.next());
   }
 
   #[test]
   fn test_append_strings() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -289,13 +292,14 @@ mod tests {
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<String>::from_path(TEST_FILE_NAME).unwrap();
-    assert_eq!(reader.next().unwrap().unwrap(), "hello");
-    assert_eq!(reader.next().unwrap().unwrap(), "world");
-    assert!(reader.next().is_none());
+    assert::equal(reader.next(), "hello");
+    assert::equal(reader.next(), "world");
+    assert::none(&reader.next());
   }
 
   #[test]
   fn test_append_string_tuple() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -305,15 +309,13 @@ mod tests {
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<(String, String)>::from_path(TEST_FILE_NAME).unwrap();
-    assert_eq!(
-      reader.next().unwrap().unwrap(),
-      ("hello".to_string(), "world".to_string())
-    );
-    assert!(reader.next().is_none());
+
+    assert::equal(reader.next(), ("hello".to_string(), "world".to_string()));
   }
 
   #[test]
   fn test_append_bytes_tuple() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -323,12 +325,13 @@ mod tests {
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
-    assert_eq!(reader.next().unwrap().unwrap(), (b"hello".to_vec(), b"world".to_vec()));
-    assert!(reader.next().is_none());
+    assert::equal(reader.next(), (b"hello".to_vec(), b"world".to_vec()));
+    assert::none(&reader.next());
   }
 
   #[test]
   fn test_append_bytes_with_index() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -343,22 +346,19 @@ mod tests {
     let sstable_index = SSTableIndexReader::<u64>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, b"hello");
-    assert_eq!(offset, &0);
+    assert::equal(sstable.next(), b"hello".as_slice());
+    assert::equal(sstable_index_iter.next(), &0);
 
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, b"world");
-    assert_eq!(offset, &6);
+    assert::equal(sstable.next(), b"world".as_slice());
+    assert::equal(sstable_index_iter.next(), &6);
 
-    assert!(sstable.next().is_none());
-    assert!(sstable_index_iter.next().is_none());
+    assert::none(&sstable.next());
+    assert::none(&sstable_index_iter.next());
   }
 
   #[test]
   fn test_append_string_with_index() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -373,22 +373,19 @@ mod tests {
     let sstable_index = SSTableIndexReader::<u64>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, "hello");
-    assert_eq!(offset, &0);
+    assert::equal(sstable.next(), "hello");
+    assert::equal(sstable_index_iter.next(), &0);
 
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, "world");
-    assert_eq!(offset, &6);
+    assert::equal(sstable.next(), "world");
+    assert::equal(sstable_index_iter.next(), &6);
 
-    assert!(sstable.next().is_none());
-    assert!(sstable_index_iter.next().is_none());
+    assert::none(&sstable.next());
+    assert::none(&sstable_index_iter.next());
   }
 
   #[test]
   fn test_append_string_tuple_with_index() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -402,17 +399,16 @@ mod tests {
     let sstable_index = SSTableIndexReader::<(String, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, ("hello".to_string(), "world".to_string()));
-    assert_eq!(offset, &("hello".to_string(), 0));
+    assert::equal(sstable.next(), ("hello".to_string(), "world".to_string()));
+    assert::equal(sstable_index_iter.next(), &("hello".to_string(), 0));
 
-    assert!(sstable.next().is_none());
-    assert!(sstable_index_iter.next().is_none());
+    assert::none(&sstable.next());
+    assert::none(&sstable_index_iter.next());
   }
 
   #[test]
   fn test_append_bytes_tuple_with_index() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -427,22 +423,19 @@ mod tests {
     let sstable_index = SSTableIndexReader::<(Vec<u8>, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, (b"hello".to_vec(), b"world".to_vec()));
-    assert_eq!(offset, &(b"hello".to_vec(), 0));
+    assert::equal(sstable.next(), (b"hello".to_vec(), b"world".to_vec()));
+    assert::equal(sstable_index_iter.next(), &(b"hello".to_vec(), 0));
 
-    let entry = sstable.next().unwrap().unwrap();
-    let offset = sstable_index_iter.next().unwrap();
-    assert_eq!(entry, (b"foo".to_vec(), b"bar".to_vec()));
-    assert_eq!(offset, &(b"foo".to_vec(), 12));
+    assert::equal(sstable.next(), (b"foo".to_vec(), b"bar".to_vec()));
+    assert::equal(sstable_index_iter.next(), &(b"foo".to_vec(), 12));
 
-    assert!(sstable.next().is_none());
-    assert!(sstable_index_iter.next().is_none());
+    assert::none(&sstable.next());
+    assert::none(&sstable_index_iter.next());
   }
 
   #[test]
   fn test_index_bytes_binary_search() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -463,15 +456,16 @@ mod tests {
     let a = sstable_index
       .indices
       .binary_search_by_key(&b"hello".as_slice(), |(k, _)| k);
-    assert_eq!(a.unwrap(), 4);
+    assert::equal(a.unwrap(), 4);
 
     sstable_index.indices.cbor_sort();
     let b = sstable_index.indices.cbor_search(b"hello");
-    assert_eq!(b.unwrap(), 4);
+    assert::equal(b.unwrap(), 4);
   }
 
   #[test]
   fn test_index_string_binary_search() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -490,15 +484,16 @@ mod tests {
     // Should use index file
     let mut sstable_index = SSTableIndexReader::<(String, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index.indices.binary_search_by_key(&"hello", |(k, _)| k);
-    assert_eq!(a.unwrap(), 4);
+    assert::equal(a, 4);
 
     sstable_index.indices.cbor_sort();
     let b = sstable_index.indices.cbor_search("hello");
-    assert_eq!(b.unwrap(), 4);
+    assert::equal(b, 4);
   }
 
   #[test]
   fn test_index_u64_binary_search() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -517,15 +512,16 @@ mod tests {
     // Should use index file
     let mut sstable_index = SSTableIndexReader::<(u64, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index.indices.binary_search_by_key(&5, |(k, _)| *k);
-    assert_eq!(a.unwrap(), 4);
+    assert::equal(a, 4);
 
     sstable_index.indices.cbor_sort();
     let b = sstable_index.indices.cbor_search(&5);
-    assert_eq!(b.unwrap(), 4);
+    assert::equal(b, 4);
   }
 
   #[test]
   fn test_index_bytes_binary_search_with_duplicates() {
+    let _lock = setup::sequential();
     fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
@@ -547,14 +543,14 @@ mod tests {
     let a = sstable_index
       .indices
       .binary_search_by_key(&b"foo".as_slice(), |(k, _)| k);
-    assert_eq!(a.unwrap(), 4);
+    assert::equal(a, 4);
 
     // Use CBOR sort and search to find the first instance of "foo" in the index file. This is
     // useful for finding the first instance of a key in the index file, which is then useful for
     // finding the first instance of a key in the data file.
     sstable_index.indices.cbor_sort();
     let b = sstable_index.indices.cbor_search(b"foo");
-    assert_eq!(b.unwrap(), 1);
+    assert::equal(b, 1);
 
     let mut sstable = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
 
@@ -562,7 +558,7 @@ mod tests {
     // We can read five "foo" entries from the data file, because we wrote five "foo" entries to
     // the data file. The index search always refers to the first "foo" entry in the index file.
     for _ in 0..5 {
-      assert_eq!(sstable.next().unwrap().unwrap(), (b"foo".to_vec(), b"bar".to_vec()));
+      assert::equal(sstable.next(), (b"foo".to_vec(), b"bar".to_vec()));
     }
   }
 }

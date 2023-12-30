@@ -1,2 +1,3 @@
 [workspace]
-members = ["sstables"]
+members = [ "sstable-cli", "sstables"]
+resolver = "2"
