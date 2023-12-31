@@ -1,10 +1,11 @@
 use std::{
   fs::{File, OpenOptions},
-  io::{self, BufWriter, Read},
+  io::{self, BufWriter, Read, Seek, SeekFrom},
   path::{Path, PathBuf},
 };
 
-#[inline]
+/// Takes a byte from the given reader. If the reader does not have enough bytes to satisfy the
+/// request, an error is returned. This function is equivalent to [`Read::read_u8`](std::io::Read::read_u8).
 pub fn take_byte<T>(b: &mut T) -> io::Result<u8>
 where
   T: Read + ?Sized,
@@ -38,7 +39,6 @@ where
 /// allocation, you can use [`take_byte_slice`](crate::read::take_byte_slice) instead, which
 /// allocates on the heap instead of the stack. If you need a byte array of a different length,
 /// you can use [`take_byte`](crate::read::take_byte) to read the bytes one at a time.
-#[inline]
 pub fn take_byte_array<const C: usize, T>(b: &mut T) -> io::Result<[u8; C]>
 where
   T: Read + ?Sized,
@@ -76,7 +76,6 @@ where
 /// need a byte array of a different length and you need to avoid heap allocations, you can
 /// implement your own function that uses [`take_byte`](crate::read::take_byte) to read the bytes
 /// one at a time.
-#[inline]
 pub fn take_byte_slice<T>(b: &mut T, len: usize) -> io::Result<Vec<u8>>
 where
   T: Read + ?Sized,
@@ -101,12 +100,28 @@ pub fn create_index_path(path: &Path) -> PathBuf {
   path
 }
 
-/// Gets a `BufWriter` for the given path and buffer size.
+/// Gets a `BufWriter` for the given path and buffer size in append mode. If the file does not
+/// exist, it is created. File position is set to the end of the file. File creation errors and
+/// file append errors are returned.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// use std::io::{self, BufWriter, Write};
+/// use sstables::read::get_file_writer;
+///
+/// let path = Path::new("test.txt");
+/// let mut writer = get_file_writer(path, 1024).unwrap();
+/// writer.write(b"Hello, world!").unwrap();
+/// ```
 pub fn get_file_writer(path: &Path, buffer_size: usize) -> io::Result<BufWriter<File>> {
-  Ok(BufWriter::with_capacity(
-    buffer_size,
-    OpenOptions::new().create(true).append(true).open(path)?,
-  ))
+  let mut buf_writer = BufWriter::with_capacity(buffer_size, OpenOptions::new().create(true).append(true).open(path)?);
+
+  // Opening a file in append mode does not move the cursor to the end of the file, so we need to.
+  buf_writer.seek(SeekFrom::End(0))?;
+
+  Ok(buf_writer)
 }
 
 #[cfg(test)]

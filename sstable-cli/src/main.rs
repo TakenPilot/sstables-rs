@@ -9,14 +9,83 @@
 use colored::Colorize;
 use sstable_cli::{
   cmds::{get_cli, Commands},
-  files::{self, create_dir_all},
+  files::{self, create_index_path, get_file_size, get_path_str},
+  outputs::{KeyValueWriter, OutputDestination, OutputWriter, OutputWriterBuilder},
   util::{get_min_max, is_sorted_by, is_unique},
 };
-use sstables::{SSTableIndexReader, SSTableIndexReaderFromPath, SSTableWriterAppend, SSTableWriterBuilder};
-use std::path::PathBuf;
+use sstables::{
+  cbor::is_cbor_sorted, SSTableIndex, SSTableIndexFromPath, SSTableReader, SSTableWriterAppend, SSTableWriterBuilder,
+};
+use std::{
+  io,
+  path::{Path, PathBuf},
+};
 
 const CONSOLE_CHECKMARK: &str = "\u{2714}";
 const CONSOLE_CROSS: &str = "\u{2718}";
+
+fn get_sorted_sstable_index(index_path: &Path) -> io::Result<SSTableIndex<(String, u64)>> {
+  let mut sstable_index = SSTableIndex::<(String, u64)>::from_path(index_path)?;
+  // Sort the index file in-place.
+  sstable_index.indices.sort_by(|a, b| a.0.cmp(&b.0));
+  Ok(sstable_index)
+}
+
+fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> {
+  let output_destination = match output_path {
+    Some(output_path) => OutputDestination::File(output_path.clone()),
+    None => OutputDestination::Stdout,
+  };
+  OutputWriterBuilder::new(output_destination).build()
+}
+
+/// Merge the SSTables by reading the lowest key from each index and writing it to the output
+/// file. Repeat until all keys have been read. This is a naive implementation that is not
+/// suitable for large SSTables because it requires all of the indices to be loaded into memory,
+/// and it requires all of the data files to be open at the same time. It is useful for testing.
+/// It is not useful for production.
+fn merge_sorted_sstable_index_pairs(
+  sstable_index_pairs: &mut Vec<(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)>,
+  emitter: &mut impl KeyValueWriter,
+) -> io::Result<()> {
+  let mut is_done = false;
+  // Create a vector of cursors to track how far we've read in each index.
+  let mut indices_cursors = vec![0; sstable_index_pairs.len()];
+  while !is_done {
+    let mut min_key: Option<String> = None;
+    let mut min_index = 0;
+    let mut min_offset = 0;
+    for (i, (_, sstable_index)) in sstable_index_pairs.iter().enumerate() {
+      let index_cursor = indices_cursors[i];
+
+      if let Some((key, offset)) = sstable_index.indices.get(index_cursor) {
+        let is_less_than_min_key = match &min_key {
+          Some(min_key) => key < min_key,
+          None => true,
+        };
+
+        if is_less_than_min_key {
+          min_key = Some(key.clone());
+          min_index = i;
+          min_offset = *offset;
+        }
+      }
+    }
+
+    if let Some(_min_key) = &min_key {
+      if let Some((sstable, _)) = sstable_index_pairs.get_mut(min_index) {
+        sstable.seek(min_offset)?;
+        let (key, value) = sstable.next().unwrap()?;
+        emitter.write(&key, &value)?;
+        indices_cursors[min_index] += 1;
+      }
+    } else {
+      is_done = true;
+    }
+  }
+
+  Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let cli = get_cli();
@@ -26,28 +95,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   match &cli.command {
     Some(Commands::Append { input_paths, key, data }) => {
       for input_path in input_paths {
-        println!(
-          "append file:{} exists:{} key:{} data:{}",
-          input_path.to_str().unwrap(),
-          input_path.is_file(),
-          key,
-          data
-        );
-
-        let path_dir = PathBuf::from(input_path.parent().unwrap());
-        create_dir_all(path_dir)?;
         let mut sstable_writer = SSTableWriterBuilder::new(input_path).build()?;
         sstable_writer.append((key.as_str(), data.as_str()))?;
         sstable_writer.close()?;
       }
     }
-    Some(Commands::Validate { input_paths }) => {
+    Some(Commands::Index { input_paths }) => {
       for input_path in input_paths {
-        println!(
-          "validate file:{} exists:{}",
-          input_path.to_str().unwrap(),
-          input_path.is_file()
-        );
+        // If file exists, get the index file path and print out each key and offset.
+        // If file does not exist, print an error message.
+        if !input_path.is_file() {
+          println!("File does not exist: {}", get_path_str(input_path))
+        } else {
+          let sstable_index = SSTableIndex::<(String, u64)>::from_path(create_index_path(input_path))?;
+          for (key, offset) in sstable_index.indices {
+            println!("{}: {}", key, offset);
+          }
+        }
       }
     }
     Some(Commands::Info { input_paths }) => {
@@ -73,57 +137,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // - The number of bloom filter file blocks
         // - The bloom filter file false positive rate
 
-        println!("Test {}", "red".red());
+        // YAML file spilt marker.
+        println!("---");
 
         let data_file_exists = input_path.is_file();
+        let input_path_str = get_path_str(&input_path);
         if !data_file_exists {
-          println!("data file: {} {}", input_path.to_str().unwrap(), missing_str);
+          println!("data path: {} {}", input_path_str, missing_str);
         } else {
-          let data_file_size = input_path.metadata()?.len();
-
-          println!(
-            "data file: {} {}\n size: {}",
-            input_path.to_str().unwrap(),
-            exists_str,
-            data_file_size,
-          );
+          println!("data path: {} {}", input_path_str, exists_str);
+          println!(" size: {}", get_file_size(&input_path)?);
         }
 
-        let input_index_path = input_path.with_extension("index.sst");
+        let input_index_path = create_index_path(&input_path);
         let index_file_exists = input_index_path.is_file();
+        let input_index_path_str = get_path_str(&input_index_path);
         if !index_file_exists {
-          println!("index file: {} {}", input_index_path.to_str().unwrap(), missing_str,);
+          println!("index path: {} {}", input_index_path_str, missing_str);
         } else {
-          let index_file_size = input_index_path.metadata()?.len();
-          let sstable_index_reader = SSTableIndexReader::<(String, u64)>::from_path(&input_index_path)?;
-          let index_entries = sstable_index_reader.indices.len();
+          println!("index path: {} {}", input_index_path_str, exists_str);
+          println!(" size: {}", get_file_size(&input_index_path)?);
 
-          // sorted?
-          let sorted = is_sorted_by(&sstable_index_reader.indices, |a, b| a.0 < b.0);
+          let sstable_index = SSTableIndex::<(String, u64)>::from_path(&input_index_path)?;
+          println!(" count: {}", sstable_index.indices.len());
 
-          // min/max
-          let mut index_min = sstable_index_reader.indices.first().unwrap().0.clone();
-          let mut index_max = sstable_index_reader.indices.last().unwrap().0.clone();
-          if !sorted {
-            if let Some((min, max)) = get_min_max(&sstable_index_reader.indices) {
+          let native_sorted = is_sorted_by(&sstable_index.indices, |a, b| a.0 <= b.0);
+          let cbor_sorted = is_cbor_sorted(&sstable_index.indices);
+          let sorted = match (native_sorted, cbor_sorted) {
+            (true, true) => "native,cbor".green(),
+            (true, false) => "native".green(),
+            (false, true) => "cbor".green(),
+            (false, false) => "false".red(),
+          };
+          println!(" sorted: {}", sorted);
+
+          let mut index_min = sstable_index.indices.first().unwrap().0.clone();
+          let mut index_max = sstable_index.indices.last().unwrap().0.clone();
+          if !native_sorted {
+            if let Some((min, max)) = get_min_max(&sstable_index.indices) {
               index_min = min.0.clone();
               index_max = max.0.clone();
             }
           }
-
-          let unique = is_unique(&sstable_index_reader.indices, |a, b| a.0 < b.0);
-
-          println!(
-            "index file: {} {}\n size: {}\n entries: {}\n min: {}\n max: {}\n sorted: {}\n unique: {}",
-            input_index_path.to_str().unwrap(),
-            exists_str,
-            index_file_size,
-            index_entries,
-            index_min,
-            index_max,
-            sorted,
-            unique,
-          );
+          println!(" min: {}", index_min);
+          println!(" max: {}", index_max);
+          println!(" unique: {}", is_unique(&sstable_index.indices, |a, b| a.0 < b.0));
         }
       }
     }
@@ -134,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       // If the format is CSV, print the contents as CSV.
       for input_path in input_paths {
         if !input_path.is_file() {
-          println!("File does not exist.")
+          println!("File does not exist: {}", get_path_str(input_path))
         } else {
           let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
           for result in sstable_reader {
@@ -163,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       // If file does not exist, print an error message.
       for input_path in input_paths {
         if !input_path.is_file() {
-          println!("File does not exist.")
+          println!("File does not exist: {}", get_path_str(input_path))
         } else {
           let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
           for result in sstable_reader {
@@ -173,25 +231,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
       }
     }
-    Some(Commands::Values { input_paths }) => {
-      // If file exists, read it with a SSTableReader while printing the keys.
-      // If file does not exist, print an error message.
-      for input_path in input_paths {
-        if !input_path.is_file() {
-          println!("File does not exist.")
-        } else {
-          let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
-          for result in sstable_reader {
-            let (_, value) = result?;
-            println!("{}", value);
-          }
-        }
-      }
-    }
+
     Some(Commands::Get { input_paths, key, n }) => {
       for input_path in input_paths {
         if !input_path.is_file() {
-          println!("File does not exist.")
+          println!("File does not exist: {}", get_path_str(input_path))
         } else {
           let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
           let mut count = 0;
@@ -210,13 +254,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
       }
     }
-    Some(Commands::Merge { input_paths }) => {
+    Some(Commands::Merge {
+      input_paths,
+      output_path,
+    }) => {
+      // Pull the index files of each SSTable into memory along with their File objects.
+      let mut sstable_index_pairs = input_paths
+        .iter()
+        .map(|input_path| {
+          Ok((
+            SSTableReader::<(String, String)>::from_path(input_path)?,
+            get_sorted_sstable_index(&create_index_path(input_path))?,
+          ))
+        })
+        .collect::<io::Result<Vec<(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)>>>()?;
+
+      let mut output_writer = get_output_writer(output_path)?;
+
+      merge_sorted_sstable_index_pairs(&mut sstable_index_pairs, &mut output_writer)?;
+    }
+    Some(Commands::Validate { input_paths }) => {
       for input_path in input_paths {
         println!(
-          "merge file:{} exists:{}",
+          "validate file:{} exists:{}",
           input_path.to_str().unwrap(),
           input_path.is_file()
         );
+      }
+    }
+    Some(Commands::Values { input_paths }) => {
+      // If file exists, read it with a SSTableReader while printing the keys.
+      // If file does not exist, print an error message.
+      for input_path in input_paths {
+        if !input_path.is_file() {
+          println!("File does not exist: {}", get_path_str(input_path))
+        } else {
+          let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
+          for result in sstable_reader {
+            let (_, value) = result?;
+            println!("{}", value);
+          }
+        }
       }
     }
     None => {}

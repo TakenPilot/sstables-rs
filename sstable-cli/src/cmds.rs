@@ -16,7 +16,7 @@ pub struct Cli {
 pub enum Commands {
   Append {
     /// The file to append to
-    #[arg(value_name = "INPUT_PATH")]
+    #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
 
     /// The data to append
@@ -27,42 +27,22 @@ pub enum Commands {
     #[arg(short, long, value_name = "DATA")]
     data: String,
   },
-  Validate {
-    /// The file to validate
-    #[arg(value_name = "INPUT_PATH")]
-    input_paths: Vec<PathBuf>,
-  },
-  Info {
-    /// The file to get info on
-    #[arg(value_name = "INPUT_PATH")]
-    input_paths: Vec<PathBuf>,
-  },
   /// Exports the contents of the SSTable to another format.
   Export {
     /// The file to export
-    #[arg(value_name = "INPUT_PATH")]
+    #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
 
     /// The format to export to
     #[arg(short, long, value_name = "FORMAT")]
     format: Option<String>,
   },
-  Keys {
-    /// The file to get keys from
-    #[arg(value_name = "INPUT_PATH")]
-    input_paths: Vec<PathBuf>,
-  },
-  Values {
-    /// The file to get values from
-    #[arg(value_name = "INPUT_PATH")]
-    input_paths: Vec<PathBuf>,
-  },
   /// Get a specific key's value from the SSTable, if it exists. Optionally, get
   /// the next N values after the key. Gets every match by default, but can be
   /// limited to the first match with `-n 1`.
   Get {
     /// The file to get the key from
-    #[arg(value_name = "INPUT_PATH")]
+    #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
 
     /// The key to get
@@ -73,10 +53,41 @@ pub enum Commands {
     #[arg(short, long, value_name = "N")]
     n: Option<usize>,
   },
-  /// Merge multiple SSTables into one, sorted appropriately.
+  /// Get the data from the index of the SSTable.
+  Index {
+    /// The file to index
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+  },
+  /// Get info about the SSTable.
+  Info {
+    /// The file to get info on
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+  },
+  Keys {
+    /// The file to get keys from
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+  },
+  /// Sort and merge one or more SSTables.
   Merge {
-    /// The files to merge
-    #[arg(short, long, value_name = "INPUT_PATHS")]
+    /// One or more files to sort and merge.
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+
+    /// Optional output file. If unset, writes to stdout.
+    #[arg(short, long, value_name = "OUTPUT_PATH")]
+    output_path: Option<PathBuf>,
+  },
+  Validate {
+    /// The file to validate.
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+  },
+  Values {
+    /// The file to get values from.
+    #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
   },
 }

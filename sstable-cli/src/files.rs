@@ -111,3 +111,28 @@ pub fn to_relative_paths(absolute_paths: &[PathBuf]) -> io::Result<Vec<PathBuf>>
 
   Ok(relative_paths)
 }
+
+/// Gets the size of a file in bytes.
+pub fn get_file_size(path: &PathBuf) -> io::Result<u64> {
+  let metadata = std::fs::metadata(path)?;
+  Ok(metadata.len())
+}
+
+/// Creates a path to the index file for the given path. If the given path has an extension, the
+/// extension is replaced with `index.<extension>`. If the given path does not have an extension,
+/// the extension is set to `index`.
+pub fn create_index_path(path: &Path) -> PathBuf {
+  let mut path = path.to_path_buf();
+  let ext_maybe = path.extension();
+  match ext_maybe {
+    Some(ext) => path.set_extension(format!("index.{}", ext.to_str().unwrap())),
+    None => path.set_extension("index"),
+  };
+
+  path
+}
+
+/// Get a displayable string of a path.
+pub fn get_path_str(path: &Path) -> &str {
+  path.to_str().unwrap()
+}

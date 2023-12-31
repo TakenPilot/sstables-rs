@@ -9,19 +9,19 @@ use crate::cbor::{read_cbor_bytes, read_cbor_text, read_cbor_u64};
 /// index to find the correct position. There are two implementations of this
 /// trait: one for tuples of (key, offset) and one for a simple series of
 /// offsets.
-pub struct SSTableIndexReader<T> {
+pub struct SSTableIndex<T> {
   pub indices: Vec<T>,
 }
 
 /// A trait for reading an SSTable index from a file path. There are multiple
 /// implementations of this trait, one for each type of index.
-pub trait SSTableIndexReaderFromPath<T> {
+pub trait SSTableIndexFromPath<T> {
   fn from_path<P: AsRef<std::path::Path>>(path: P) -> io::Result<Self>
   where
     Self: std::marker::Sized;
 }
 
-impl SSTableIndexReaderFromPath<u64> for SSTableIndexReader<u64> {
+impl SSTableIndexFromPath<u64> for SSTableIndex<u64> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -32,11 +32,11 @@ impl SSTableIndexReaderFromPath<u64> for SSTableIndexReader<u64> {
       indices.push(read_cbor_u64(&mut cursor)?);
     }
 
-    Ok(SSTableIndexReader { indices })
+    Ok(SSTableIndex { indices })
   }
 }
 
-impl SSTableIndexReaderFromPath<(Vec<u8>, u64)> for SSTableIndexReader<(Vec<u8>, u64)> {
+impl SSTableIndexFromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -47,11 +47,11 @@ impl SSTableIndexReaderFromPath<(Vec<u8>, u64)> for SSTableIndexReader<(Vec<u8>,
       indices.push((read_cbor_bytes(&mut cursor)?, read_cbor_u64(&mut cursor)?));
     }
 
-    Ok(SSTableIndexReader { indices })
+    Ok(SSTableIndex { indices })
   }
 }
 
-impl SSTableIndexReaderFromPath<(String, u64)> for SSTableIndexReader<(String, u64)> {
+impl SSTableIndexFromPath<(String, u64)> for SSTableIndex<(String, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -62,11 +62,11 @@ impl SSTableIndexReaderFromPath<(String, u64)> for SSTableIndexReader<(String, u
       indices.push((read_cbor_text(&mut cursor)?, read_cbor_u64(&mut cursor)?));
     }
 
-    Ok(SSTableIndexReader { indices })
+    Ok(SSTableIndex { indices })
   }
 }
 
-impl SSTableIndexReaderFromPath<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
+impl SSTableIndexFromPath<(u64, u64)> for SSTableIndex<(u64, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -77,7 +77,7 @@ impl SSTableIndexReaderFromPath<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
       indices.push((read_cbor_u64(&mut cursor)?, read_cbor_u64(&mut cursor)?));
     }
 
-    Ok(SSTableIndexReader { indices })
+    Ok(SSTableIndex { indices })
   }
 }
 
@@ -85,7 +85,7 @@ impl SSTableIndexReaderFromPath<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
 #[derive(Debug)]
 pub struct SSTableReader<T> {
   pub data_reader: BufReader<File>,
-  pub phantom: std::marker::PhantomData<T>,
+  phantom: std::marker::PhantomData<T>,
 }
 
 impl<T> SSTableReader<T> {
@@ -96,6 +96,7 @@ impl<T> SSTableReader<T> {
     })
   }
 
+  /// Seeks to the given offset in the data file.
   pub fn seek(&mut self, offset: u64) -> io::Result<u64> {
     self.data_reader.seek(io::SeekFrom::Start(offset))
   }
