@@ -336,6 +336,40 @@ pub fn write_cbor_head<W: Write>(writer: &mut W, major_type: MajorType, value: u
   Ok(())
 }
 
+pub trait CborWrite {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()>;
+}
+
+impl CborWrite for &[u8] {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    write_cbor_bytes(writer, self)
+  }
+}
+
+impl CborWrite for Vec<u8> {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    write_cbor_bytes(writer, self)
+  }
+}
+
+impl CborWrite for &str {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    write_cbor_text(writer, self)
+  }
+}
+
+impl CborWrite for String {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    write_cbor_text(writer, self)
+  }
+}
+
+impl CborWrite for u64 {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    write_cbor_unsigned_integer(writer, *self)
+  }
+}
+
 /// A convenience function for writing text, encoded as UTF8.
 ///
 /// # Example
@@ -392,7 +426,7 @@ pub fn write_cbor_unsigned_integer<W: Write>(writer: &mut W, value: u64) -> io::
 
 /// A comparison function for CBOR data items that have already been serialized
 /// to bytes.
-fn cbor_cmp(a: &Cursor<Vec<u8>>, b: &Cursor<Vec<u8>>) -> std::cmp::Ordering {
+fn cbor_byte_cmp(a: &Cursor<Vec<u8>>, b: &Cursor<Vec<u8>>) -> std::cmp::Ordering {
   let len_a = a.position() as usize;
   let len_b = b.position() as usize;
   if len_a != len_b {
@@ -402,45 +436,23 @@ fn cbor_cmp(a: &Cursor<Vec<u8>>, b: &Cursor<Vec<u8>>) -> std::cmp::Ordering {
   a.get_ref()[0..len_a].cmp(&b.get_ref()[0..len_a])
 }
 
-/// Extend common types with a method to search for a key assuming the indices are sorted as per
-/// the CBOR spec. If there are duplicates, the index of the first one is returned. If the key is
-/// not found, the Result will be an Err with the index where the key would be inserted.
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::CborSearch;
-///
-/// let indices = vec![
-///  (vec![1, 2], 10),
-///  (vec![1, 2, 4], 20),
-///  (vec![1, 5, 3], 30),
-/// ];
-/// assert_eq!(indices.cbor_search(&vec![1, 2]), Ok(0));
-/// assert_eq!(indices.cbor_search(&vec![1, 2, 4]), Ok(1));
-/// assert_eq!(indices.cbor_search(&vec![1, 2, 3]), Err(1));
-/// assert_eq!(indices.cbor_search(&vec![1, 2, 4, 5]), Err(3));
-/// ```
-pub trait CborSearch<T> {
-  fn cbor_search(&self, key: T) -> Result<usize, usize>;
-}
-
-impl CborSearch<&[u8]> for Vec<(Vec<u8>, u64)> {
-  fn cbor_search(&self, key: &[u8]) -> Result<usize, usize> {
-    binary_search_bytes_first(self, key)
-  }
-}
-
-impl CborSearch<&str> for Vec<(String, u64)> {
-  fn cbor_search(&self, key: &str) -> Result<usize, usize> {
-    binary_search_text_first(self, key)
-  }
-}
-
-impl CborSearch<&u64> for Vec<(u64, u64)> {
-  fn cbor_search(&self, key: &u64) -> Result<usize, usize> {
-    binary_search_unsigned_integer_first(self, *key)
-  }
+/// A binary search function within an index. The keys are assumed to be sorted as per
+/// the CBOR spec (see Section 3.9).
+pub fn cbor_binary_search_first<T, R>(indices: &[(T, u64)], target: &R) -> Result<usize, usize>
+where
+  T: CborWrite + std::cmp::PartialEq,
+  R: CborWrite + std::cmp::PartialEq,
+{
+  let mut target_cur = Cursor::new(Vec::new());
+  let mut key_cur = Cursor::new(Vec::new());
+  target.cbor_write(&mut target_cur).unwrap();
+  indices
+    .binary_search_by(|(key, _)| {
+      key_cur.set_position(0);
+      key.cbor_write(&mut key_cur).unwrap();
+      cbor_byte_cmp(&key_cur, &target_cur)
+    })
+    .map(|i| step_back_for_duplicates(indices, i))
 }
 
 /// If the key is found, we need to check if there are any duplicates. If there are, we need to
@@ -456,234 +468,21 @@ where
   i
 }
 
-/// Find the index of a byte array assuming the indices are sorted as per the CBOR spec. If there
-/// are duplicates, the index of the first one is returned.
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::binary_search_bytes_first;
-///
-/// let indices = vec![
-/// (vec![1, 2], 10),
-/// (vec![1, 2, 4], 20),
-/// (vec![1, 5, 3], 30),
-/// ];
-/// assert_eq!(binary_search_bytes_first(&indices, &[1, 2]), Ok(0));
-/// ```
-pub fn binary_search_bytes_first(indices: &[(Vec<u8>, u64)], seek: &[u8]) -> Result<usize, usize> {
-  let mut seek_cur = Cursor::new(Vec::new());
-  write_cbor_bytes(&mut seek_cur, seek).unwrap();
-  let mut probe_cur = Cursor::new(Vec::new());
-  indices
-    .binary_search_by(|(probe, _)| {
-      probe_cur.set_position(0);
-      write_cbor_bytes(&mut probe_cur, probe).unwrap();
-      cbor_cmp(&probe_cur, &seek_cur)
-    })
-    .map(|i| step_back_for_duplicates(indices, i))
-}
-
-/// Find the index of a string assuming the indices are sorted as per the CBOR spec. If there
-/// are duplicates, the index of the first one is returned.
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::binary_search_text_first;
-///
-/// let indices = vec![
-/// ("a".to_string(), 0),
-/// ("a".to_string(), 1),
-/// ("a".to_string(), 2),
-/// ("a".to_string(), 3),
-/// ("b".to_string(), 4),
-/// ("cd".to_string(), 5),
-/// ];
-/// assert_eq!(binary_search_text_first(&indices, "a"), Ok(0));
-/// ```
-pub fn binary_search_text_first(indices: &[(String, u64)], seek: &str) -> Result<usize, usize> {
-  let mut seek_cur = Cursor::new(Vec::new());
-  write_cbor_text(&mut seek_cur, seek).unwrap();
-  let mut probe_cur = Cursor::new(Vec::new());
-  indices
-    .binary_search_by(|(probe, _)| {
-      probe_cur.set_position(0);
-      write_cbor_text(&mut probe_cur, probe).unwrap();
-      cbor_cmp(&probe_cur, &seek_cur)
-    })
-    .map(|i| step_back_for_duplicates(indices, i))
-}
-
-/// Find the index of an unsigned integer assuming the indices are sorted as per the CBOR spec. If there
-/// are duplicates, the index of the first one is returned.
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::binary_search_unsigned_integer_first;
-///
-/// let indices = vec![
-///  (1, 0),
-///  (3, 1),
-///  (3, 2),
-///  (3, 3),
-///  (4, 4),
-/// ];
-/// assert_eq!(binary_search_unsigned_integer_first(&indices, 3), Ok(1));
-/// ```
-pub fn binary_search_unsigned_integer_first(indices: &[(u64, u64)], seek: u64) -> Result<usize, usize> {
-  let mut seek_cur = Cursor::new(Vec::new());
-  write_cbor_unsigned_integer(&mut seek_cur, seek).unwrap();
-  let mut probe_cur = Cursor::new(Vec::new());
-  indices
-    .binary_search_by(|(probe, _)| {
-      probe_cur.set_position(0);
-      write_cbor_unsigned_integer(&mut probe_cur, *probe).unwrap();
-      cbor_cmp(&probe_cur, &seek_cur)
-    })
-    .map(|i| step_back_for_duplicates(indices, i))
-}
-
-/// Depending on the type, sort the indices in place. The indices are sorted by the first value in
-/// the tuple. The second value is the offset in the data file. If the bytes are equal, we need to
-/// sort by the offset because we'd prefer to read the values in the order they were written.
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::{CborSort, sort_bytes};
-///
-/// let mut indices = vec![
-///  (vec![1, 5, 3], 0),
-///  (vec![1, 2, 4], 1),
-///  (vec![1, 2], 2),
-/// ];
-/// indices.cbor_sort();
-/// assert_eq!(indices, vec![
-///  (vec![1, 2], 2),
-///  (vec![1, 2, 4], 1),
-///  (vec![1, 5, 3], 0),
-/// ]);
-/// ```
-///
-/// # Example
-///
-/// ```
-/// use sstables::cbor::{CborSort, sort_text};
-///
-/// let mut indices = vec![
-///  ("a".to_string(), 0),
-///  ("bc".to_string(), 1),
-///  ("d".to_string(), 2),
-/// ];
-/// indices.cbor_sort();
-/// assert_eq!(indices, vec![
-///  ("a".to_string(), 0),
-///  ("d".to_string(), 2),
-///  ("bc".to_string(), 1),
-/// ]);
-/// ```
-///
-pub trait CborSort<T> {
-  fn cbor_sort(&mut self);
-}
-
-impl CborSort<Vec<u8>> for Vec<(Vec<u8>, u64)> {
-  fn cbor_sort(&mut self) {
-    sort_bytes(self);
-  }
-}
-
-impl CborSort<String> for Vec<(String, u64)> {
-  fn cbor_sort(&mut self) {
-    sort_text(self);
-  }
-}
-
-impl CborSort<u64> for Vec<(u64, u64)> {
-  fn cbor_sort(&mut self) {
-    sort_unsigned_integer(self);
-  }
-}
-
-/// Sorts the indices in place. The indices are sorted by the first value in the tuple. The second
+/// Sort the indices in place. The indices are sorted by the first value in the tuple. The second
 /// value is the offset in the data file. If the bytes are equal, we need to sort by the offset
-/// because we'd prefer to read the values in the order they were written.
-///
-/// # Performance
-///
-/// This function is a bit slower than other sort functions because we need to write the bytes
-/// to a buffer before we can compare them to be compliant with the CBOR spec. We reuse the same
-/// buffers for each comparison, only reallocating to a larger buffer if we encounter a element
-/// that needs more space.
-pub fn sort_text(indices: &mut [(String, u64)]) {
+/// because we'd prefer to read the values by progressing forward in the data.
+pub fn cbor_sort<T>(indices: &mut [(T, u64)])
+where
+  T: CborWrite + std::cmp::PartialEq,
+{
   let mut a_cur = Cursor::new(Vec::new());
   let mut b_cur = Cursor::new(Vec::new());
   indices.sort_by(|(a_key, a_offset), (b_key, b_offset)| {
     a_cur.set_position(0);
     b_cur.set_position(0);
-    write_cbor_text(&mut a_cur, a_key).unwrap();
-    write_cbor_text(&mut b_cur, b_key).unwrap();
-    let mut r = cbor_cmp(&a_cur, &b_cur);
-
-    if r == std::cmp::Ordering::Equal {
-      r = a_offset.cmp(b_offset);
-    }
-
-    r
-  });
-}
-
-/// Sorts the indices in place.
-///
-/// The indices are sorted by the first value in the tuple. The second
-/// value is the offset in the data file. If the bytes are equal, we need to sort by the offset
-/// because we'd prefer to read the values in the order they were written.
-///
-/// # Performance
-///
-/// This function is a bit slower than other sort functions because we need to write the bytes
-/// to a buffer before we can compare them to be compliant with the CBOR spec. We reuse the same
-/// buffers for each comparison, only reallocating to a larger buffer if we encounter a element
-/// that needs more space.
-pub fn sort_bytes(indices: &mut [(Vec<u8>, u64)]) {
-  let mut a_cur = Cursor::new(Vec::new());
-  let mut b_cur = Cursor::new(Vec::new());
-  indices.sort_by(|(a_key, a_offset), (b_key, b_offset)| {
-    a_cur.set_position(0);
-    b_cur.set_position(0);
-    write_cbor_bytes(&mut a_cur, a_key).unwrap();
-    write_cbor_bytes(&mut b_cur, b_key).unwrap();
-    let mut r = cbor_cmp(&a_cur, &b_cur);
-
-    if r == std::cmp::Ordering::Equal {
-      r = a_offset.cmp(b_offset);
-    }
-
-    r
-  });
-}
-
-/// Sorts the indices in place. The indices are sorted by the first value in the tuple. The second
-/// value is the offset in the data file. If the bytes are equal, we need to sort by the offset
-/// because we'd prefer to read the values in the order they were written.
-///
-/// # Performance
-///
-/// This function is a bit slower than other sort functions because we need to write the bytes
-/// to a buffer before we can compare them to be compliant with the CBOR spec. We reuse the same
-/// buffers for each comparison, only reallocating to a larger buffer if we encounter a element
-/// that needs more space.
-pub fn sort_unsigned_integer(indices: &mut [(u64, u64)]) {
-  let mut a_cur = Cursor::new(Vec::new());
-  let mut b_cur = Cursor::new(Vec::new());
-  indices.sort_by(|(a_key, a_offset), (b_key, b_offset)| {
-    a_cur.set_position(0);
-    b_cur.set_position(0);
-    write_cbor_unsigned_integer(&mut a_cur, *a_key).unwrap();
-    write_cbor_unsigned_integer(&mut b_cur, *b_key).unwrap();
-    let mut r = cbor_cmp(&a_cur, &b_cur);
+    a_key.cbor_write(&mut a_cur).unwrap();
+    b_key.cbor_write(&mut b_cur).unwrap();
+    let mut r = cbor_byte_cmp(&a_cur, &b_cur);
 
     if r == std::cmp::Ordering::Equal {
       r = a_offset.cmp(b_offset);
@@ -984,5 +783,112 @@ mod tests {
     let byte = take_byte(&mut cursor).unwrap();
     let value = read_cbor_head_u64(&mut cursor, byte).unwrap();
     assert::equal(value, u64::MAX);
+  }
+
+  #[test]
+  fn cbor_sort_works_on_u64() {
+    let mut indices = [(2, 1), (1, 2), (5, 2), (1, 1), (2, 2), (4, 2), (3, 2), (4, 1)];
+    cbor_sort(&mut indices);
+    assert::equal(
+      indices,
+      [(1, 1), (1, 2), (2, 1), (2, 2), (3, 2), (4, 1), (4, 2), (5, 2)],
+    );
+  }
+
+  #[test]
+  fn cbor_sort_works_on_bytes() {
+    let mut indices = [
+      (vec![2], 1),
+      (vec![1], 2),
+      (vec![5], 2),
+      (vec![1], 1),
+      (vec![2], 2),
+      (vec![4], 2),
+      (vec![3], 2),
+      (vec![4], 1),
+    ];
+    cbor_sort(&mut indices);
+    assert::equal(
+      indices,
+      [
+        (vec![1], 1),
+        (vec![1], 2),
+        (vec![2], 1),
+        (vec![2], 2),
+        (vec![3], 2),
+        (vec![4], 1),
+        (vec![4], 2),
+        (vec![5], 2),
+      ],
+    );
+  }
+
+  #[test]
+  fn cbor_sort_works_on_text() {
+    let mut indices = [
+      ("2", 1),
+      ("1", 2),
+      ("5", 2),
+      ("1", 1),
+      ("2", 2),
+      ("4", 2),
+      ("3", 2),
+      ("00", 1),
+    ];
+    cbor_sort(&mut indices);
+    assert::equal(
+      indices,
+      [
+        ("1", 1),
+        ("1", 2),
+        ("2", 1),
+        ("2", 2),
+        ("3", 2),
+        ("4", 2),
+        ("5", 2),
+        ("00", 1), // cbor sorts by bytes, not by string
+      ],
+    );
+  }
+
+  #[test]
+  fn cbor_binary_search_first_works() {
+    let indices = [
+      (vec![1], 1),
+      (vec![1], 2),
+      (vec![2], 1),
+      (vec![2], 2),
+      (vec![3], 2),
+      (vec![4], 1),
+      (vec![4], 2),
+      (vec![5], 2),
+    ];
+    assert::equal(cbor_binary_search_first(&indices, &vec![1]), Ok(0));
+    assert::equal(cbor_binary_search_first(&indices, &vec![2]), Ok(2));
+    assert::equal(cbor_binary_search_first(&indices, &vec![3]), Ok(4));
+    assert::equal(cbor_binary_search_first(&indices, &vec![4]), Ok(5));
+    assert::equal(cbor_binary_search_first(&indices, &vec![5]), Ok(7));
+    assert::equal(cbor_binary_search_first(&indices, &vec![6]), Err(8));
+  }
+
+  #[test]
+  fn cbor_binary_search_first_works_for_duplicates() {
+    let indices = [
+      (vec![1], 1),
+      (vec![1], 2),
+      (vec![1], 3),
+      (vec![1], 4),
+      (vec![1], 5),
+      (vec![1], 6),
+      (vec![1], 7),
+      (vec![1], 8),
+    ];
+    assert::equal(cbor_binary_search_first(&indices, &vec![1]), Ok(0));
+  }
+
+  #[test]
+  fn cbor_binary_search_first_works_for_empty() {
+    let indices: Vec<(Vec<u8>, u64)> = Vec::new();
+    assert::equal(cbor_binary_search_first(&indices, &vec![1]), Err(0));
   }
 }

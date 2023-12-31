@@ -1,4 +1,8 @@
-use std::io::{self, Read};
+use std::{
+  fs::{File, OpenOptions},
+  io::{self, BufWriter, Read},
+  path::{Path, PathBuf},
+};
 
 #[inline]
 pub fn take_byte<T>(b: &mut T) -> io::Result<u8>
@@ -81,6 +85,28 @@ where
   b.read_exact(&mut buf)?;
 
   Ok(buf)
+}
+
+/// Creates a path to the index file for the given path. If the given path has an extension, the
+/// extension is replaced with `index.<extension>`. If the given path does not have an extension,
+/// the extension is set to `index`.
+pub fn create_index_path(path: &Path) -> PathBuf {
+  let mut path = path.to_path_buf();
+  let ext_maybe = path.extension();
+  match ext_maybe {
+    Some(ext) => path.set_extension(format!("index.{}", ext.to_str().unwrap())),
+    None => path.set_extension("index"),
+  };
+
+  path
+}
+
+/// Gets a `BufWriter` for the given path and buffer size.
+pub fn get_file_writer(path: &Path, buffer_size: usize) -> io::Result<BufWriter<File>> {
+  Ok(BufWriter::with_capacity(
+    buffer_size,
+    OpenOptions::new().create(true).append(true).open(path)?,
+  ))
 }
 
 #[cfg(test)]

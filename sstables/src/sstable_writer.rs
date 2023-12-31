@@ -8,8 +8,7 @@
 //! if written as a key-value tuple, the index will be a map of keys to file offsets.
 //!
 //! This code is designed to be extended, and therefore the `SSTableWriter` struct is generic over
-//! the type of data that is being written. The `Append` trait is implemented for several combinations
-//! of types, but you can also use them as examples to extend your own.
+//! the type of data that is being written.
 //!
 //! The `SSTableWriter` struct is designed to be used in a streaming fashion, and therefore does not
 //! buffer the entire file in memory. If you need to write to the same file from
@@ -21,7 +20,7 @@
 //! ```
 //! use sstables::sstable_writer::SSTableWriterBuilder;
 //! use sstables::sstable_writer::SSTableWriter;
-//! use sstables::sstable_writer::Append;
+//! use sstables::sstable_writer::SSTableWriterAppend;
 //!
 //! let mut writer = SSTableWriterBuilder::new("test")
 //!   .build()
@@ -47,27 +46,15 @@
 //! the file cannot be flushed to disk. All errors are standard `io::Error`s.
 //!
 
-use std::fs::{File, OpenOptions};
+use crate::cbor::{write_cbor_bytes, write_cbor_head, write_cbor_text, MajorType};
+use crate::read::{create_index_path, get_file_writer};
+use std::fs::File;
 use std::io::{self, BufWriter, Result, Seek, Write};
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::cbor::{write_cbor_bytes, write_cbor_head, write_cbor_text, MajorType};
-
+/// The default buffer size for the `SSTableWriter`.
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
-
-/// Given a path, add "index" to the front of the path's extension. If it has no extension, add ".index".
-///
-fn create_index_path(path: &Path) -> PathBuf {
-  let mut path = path.to_path_buf();
-  let ext_maybe = path.extension();
-  match ext_maybe {
-    Some(ext) => path.set_extension(format!("index.{}", ext.to_str().unwrap())),
-    None => path.set_extension("index"),
-  };
-
-  path
-}
 
 /// Builder for `SSTableWriter`
 ///
@@ -75,7 +62,8 @@ fn create_index_path(path: &Path) -> PathBuf {
 ///
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
-/// use sstables::sstable_writer::Append;
+/// use sstables::sstable_writer::SSTableWriter;
+/// use sstables::sstable_writer::SSTableWriterAppend;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .build()
@@ -89,6 +77,8 @@ fn create_index_path(path: &Path) -> PathBuf {
 ///
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
+/// use sstables::sstable_writer::SSTableWriter;
+/// use sstables::sstable_writer::SSTableWriterAppend;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .index_writer_path("test.index")
@@ -102,7 +92,7 @@ fn create_index_path(path: &Path) -> PathBuf {
 pub struct SSTableWriterBuilder<T> {
   data_writer_path: PathBuf,
   index_writer_path: Option<PathBuf>,
-  buffer_size: Option<usize>,
+  buffer_size: usize,
   phantom: PhantomData<T>,
 }
 
@@ -111,37 +101,36 @@ impl<T> SSTableWriterBuilder<T> {
     SSTableWriterBuilder {
       data_writer_path: data_writer_path.into(),
       index_writer_path: None,
-      buffer_size: None,
+      buffer_size: DEFAULT_BUFFER_SIZE,
       phantom: PhantomData,
     }
   }
 
+  /// Set a custom path for the index file. If not set, the index file will be created in the same
+  /// directory as the data file, with the same name as the data file, but with "index" prepended
+  /// to the extension.
   pub fn index_writer_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
     self.index_writer_path = Some(path.into());
     self
   }
 
+  /// Set a custom buffer size for the `BufWriter`s. If not set, the default buffer size is 8 KiB.
   pub fn buffer_size(mut self, size: usize) -> Self {
-    self.buffer_size = Some(size);
+    self.buffer_size = size;
     self
   }
 
+  /// Consumes the builder, returning a `SSTableWriter`.
   pub fn build(self) -> io::Result<SSTableWriter<T>> {
-    let buffer_size = self.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE);
     let data_writer_path = self.data_writer_path;
-    let data_writer = BufWriter::with_capacity(
-      buffer_size,
-      OpenOptions::new().create(true).append(true).open(&data_writer_path)?,
-    );
+    let data_writer = get_file_writer(&data_writer_path, self.buffer_size)?;
 
+    // If the index writer path is not set, create it from the data writer path.
     let index_writer_path = self
       .index_writer_path
       .unwrap_or_else(|| create_index_path(&data_writer_path));
 
-    let index_writer = BufWriter::with_capacity(
-      buffer_size,
-      OpenOptions::new().create(true).append(true).open(&index_writer_path)?,
-    );
+    let index_writer = get_file_writer(&index_writer_path, self.buffer_size)?;
 
     Ok(SSTableWriter {
       data_writer_path,
@@ -153,6 +142,11 @@ impl<T> SSTableWriterBuilder<T> {
   }
 }
 
+/// A convenience wrapper around two `BufWriter`s for appending to a data and index file in a
+/// performant manner. The data and index is written as a sequence of CBOR-encoded arrays or maps,
+/// and therefore can be read by any CBOR implementation. If written as single entries, the index
+/// will be an array of file offsets, and if written as a key-value tuple, the index will be a map
+/// of keys to file offsets.
 pub struct SSTableWriter<T> {
   pub data_writer_path: PathBuf,
   pub data_writer: BufWriter<File>,
@@ -186,64 +180,65 @@ impl<T> SSTableWriter<T> {
   }
 }
 
-/// Trait for appending entries to an SSTableWriter
-pub trait Append<T> {
+/// Trait for appending entries to an SSTableWriter. This trait is implemented for several
+/// combinations of types, but you can also use them as examples to extend your own.
+pub trait SSTableWriterAppend<T> {
   fn append(&mut self, entry: T) -> io::Result<()>;
 }
 
-impl Append<&[u8]> for SSTableWriter<&[u8]> {
+impl SSTableWriterAppend<&[u8]> for SSTableWriter<&[u8]> {
   /// Appends a value into the data file, and the file offset position into the index.
   fn append(&mut self, entry: &[u8]) -> io::Result<()> {
-    let data_byte_offset = self.data_writer.stream_position()?;
+    let initial_offset = self.data_writer.stream_position()?;
 
     write_cbor_bytes(&mut self.data_writer, entry)
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, data_byte_offset))
+      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
   }
 }
 
-impl Append<&str> for SSTableWriter<&str> {
+impl SSTableWriterAppend<&str> for SSTableWriter<&str> {
   /// Appends a value into the data file, and the file offset position into the index.
   fn append(&mut self, entry: &str) -> io::Result<()> {
-    let data_byte_offset = self.data_writer.stream_position()?;
+    let initial_offset = self.data_writer.stream_position()?;
 
     write_cbor_text(&mut self.data_writer, entry)
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, data_byte_offset))
+      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
   }
 }
 
-impl Append<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
+impl SSTableWriterAppend<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (&[u8], &[u8])) -> io::Result<()> {
-    let data_byte_offset = self.data_writer.stream_position()?;
+    let initial_offset = self.data_writer.stream_position()?;
 
     write_cbor_bytes(&mut self.data_writer, entry.0)
       .and_then(|_| write_cbor_bytes(&mut self.data_writer, entry.1))
       .and_then(|_| write_cbor_bytes(&mut self.index_writer, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, data_byte_offset))
+      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
   }
 }
 
-impl Append<(&str, &str)> for SSTableWriter<(&str, &str)> {
+impl SSTableWriterAppend<(&str, &str)> for SSTableWriter<(&str, &str)> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (&str, &str)) -> io::Result<()> {
-    let data_byte_offset = self.data_writer.stream_position()?;
+    let initial_offset = self.data_writer.stream_position()?;
 
     write_cbor_text(&mut self.data_writer, entry.0)
       .and_then(|_| write_cbor_text(&mut self.data_writer, entry.1))
       .and_then(|_| write_cbor_text(&mut self.index_writer, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, data_byte_offset))
+      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
   }
 }
 
-impl Append<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
+impl SSTableWriterAppend<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (u64, &[u8])) -> io::Result<()> {
-    let data_byte_offset = self.data_writer.stream_position()?;
+    let initial_offset = self.data_writer.stream_position()?;
 
     write_cbor_head(&mut self.data_writer, MajorType::UnsignedInteger, entry.0)
       .and_then(|_| write_cbor_bytes(&mut self.data_writer, entry.1))
       .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, data_byte_offset))
+      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
   }
 }
 
@@ -252,8 +247,8 @@ mod tests {
   use common_testing::{assert, setup};
   use std::fs;
 
-  use crate::cbor::{CborSearch, CborSort};
-  use crate::sstable_reader::{SSTableIndexReader, SSTableIndexReaderTrait, SSTableReader};
+  use crate::cbor::{cbor_binary_search_first, cbor_sort};
+  use crate::sstable_reader::{SSTableIndexReader, SSTableIndexReaderFromPath, SSTableReader};
   use crate::sstable_writer::SSTableWriterBuilder;
 
   use super::*;
@@ -458,8 +453,8 @@ mod tests {
       .binary_search_by_key(&b"hello".as_slice(), |(k, _)| k);
     assert::equal(a.unwrap(), 4);
 
-    sstable_index.indices.cbor_sort();
-    let b = sstable_index.indices.cbor_search(b"hello");
+    cbor_sort(&mut sstable_index.indices);
+    let b = cbor_binary_search_first(&sstable_index.indices, &b"hello".as_slice());
     assert::equal(b.unwrap(), 4);
   }
 
@@ -486,8 +481,8 @@ mod tests {
     let a = sstable_index.indices.binary_search_by_key(&"hello", |(k, _)| k);
     assert::equal(a, 4);
 
-    sstable_index.indices.cbor_sort();
-    let b = sstable_index.indices.cbor_search("hello");
+    cbor_sort(&mut sstable_index.indices);
+    let b = cbor_binary_search_first(&sstable_index.indices, &"hello");
     assert::equal(b, 4);
   }
 
@@ -514,8 +509,8 @@ mod tests {
     let a = sstable_index.indices.binary_search_by_key(&5, |(k, _)| *k);
     assert::equal(a, 4);
 
-    sstable_index.indices.cbor_sort();
-    let b = sstable_index.indices.cbor_search(&5);
+    cbor_sort(&mut sstable_index.indices);
+    let b = cbor_binary_search_first(&sstable_index.indices, &5);
     assert::equal(b, 4);
   }
 
@@ -548,8 +543,8 @@ mod tests {
     // Use CBOR sort and search to find the first instance of "foo" in the index file. This is
     // useful for finding the first instance of a key in the index file, which is then useful for
     // finding the first instance of a key in the data file.
-    sstable_index.indices.cbor_sort();
-    let b = sstable_index.indices.cbor_search(b"foo");
+    cbor_sort(&mut sstable_index.indices);
+    let b = cbor_binary_search_first(&sstable_index.indices, &b"foo".as_slice());
     assert::equal(b, 1);
 
     let mut sstable = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();

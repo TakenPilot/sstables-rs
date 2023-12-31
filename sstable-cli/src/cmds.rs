@@ -16,8 +16,8 @@ pub struct Cli {
 pub enum Commands {
   Append {
     /// The file to append to
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
 
     /// The data to append
     #[arg(short, long, value_name = "KEY")]
@@ -29,41 +29,41 @@ pub enum Commands {
   },
   Validate {
     /// The file to validate
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
   },
   Info {
     /// The file to get info on
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
   },
   /// Exports the contents of the SSTable to another format.
   Export {
     /// The file to export
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
 
     /// The format to export to
     #[arg(short, long, value_name = "FORMAT")]
-    format: String,
+    format: Option<String>,
   },
   Keys {
     /// The file to get keys from
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
   },
   Values {
     /// The file to get values from
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
   },
   /// Get a specific key's value from the SSTable, if it exists. Optionally, get
   /// the next N values after the key. Gets every match by default, but can be
   /// limited to the first match with `-n 1`.
   Get {
     /// The file to get the key from
-    #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    #[arg(value_name = "INPUT_PATH")]
+    input_paths: Vec<PathBuf>,
 
     /// The key to get
     #[arg(short, long, value_name = "KEY")]
@@ -76,8 +76,8 @@ pub enum Commands {
   /// Merge multiple SSTables into one, sorted appropriately.
   Merge {
     /// The files to merge
-    #[arg(short, long, value_name = "FILE")]
-    files: Vec<PathBuf>,
+    #[arg(short, long, value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
   },
 }
 

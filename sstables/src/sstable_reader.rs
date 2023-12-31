@@ -13,13 +13,15 @@ pub struct SSTableIndexReader<T> {
   pub indices: Vec<T>,
 }
 
-pub trait SSTableIndexReaderTrait<T> {
+/// A trait for reading an SSTable index from a file path. There are multiple
+/// implementations of this trait, one for each type of index.
+pub trait SSTableIndexReaderFromPath<T> {
   fn from_path<P: AsRef<std::path::Path>>(path: P) -> io::Result<Self>
   where
     Self: std::marker::Sized;
 }
 
-impl SSTableIndexReaderTrait<u64> for SSTableIndexReader<u64> {
+impl SSTableIndexReaderFromPath<u64> for SSTableIndexReader<u64> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -34,7 +36,7 @@ impl SSTableIndexReaderTrait<u64> for SSTableIndexReader<u64> {
   }
 }
 
-impl SSTableIndexReaderTrait<(Vec<u8>, u64)> for SSTableIndexReader<(Vec<u8>, u64)> {
+impl SSTableIndexReaderFromPath<(Vec<u8>, u64)> for SSTableIndexReader<(Vec<u8>, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -49,7 +51,7 @@ impl SSTableIndexReaderTrait<(Vec<u8>, u64)> for SSTableIndexReader<(Vec<u8>, u6
   }
 }
 
-impl SSTableIndexReaderTrait<(String, u64)> for SSTableIndexReader<(String, u64)> {
+impl SSTableIndexReaderFromPath<(String, u64)> for SSTableIndexReader<(String, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -64,7 +66,7 @@ impl SSTableIndexReaderTrait<(String, u64)> for SSTableIndexReader<(String, u64)
   }
 }
 
-impl SSTableIndexReaderTrait<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
+impl SSTableIndexReaderFromPath<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -79,6 +81,7 @@ impl SSTableIndexReaderTrait<(u64, u64)> for SSTableIndexReader<(u64, u64)> {
   }
 }
 
+/// A SSTable reader that can read a series of bytes or text from an SSTable.
 #[derive(Debug)]
 pub struct SSTableReader<T> {
   pub data_reader: BufReader<File>,
