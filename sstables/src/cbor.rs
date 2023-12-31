@@ -492,6 +492,66 @@ where
   });
 }
 
+/// Check if the indices are sorted as per the CBOR spec (see Section 3.9).
+/// The indices are ideally sorted by the first value in the tuple. The second value is the
+/// offset in the data file. If the bytes are equal, we need to sort by the offset because
+/// we'd prefer to read the values by progressing forward in the data.
+///
+/// # Example
+///
+/// ```
+/// use std::io::Cursor;
+/// use sstables::cbor::{is_cbor_sorted, CborWrite};
+///
+/// let mut indices = vec![
+///  (vec![1], 0),
+///  (vec![2], 1),
+///  (vec![3], 2),
+///  (vec![4], 3),
+///  (vec![5], 4),
+///  (vec![6], 5),
+///  (vec![7], 6),
+/// ];
+/// assert!(is_cbor_sorted(&indices));
+///
+/// indices[0] = (vec![3], 0);
+/// assert!(!is_cbor_sorted(&indices));
+///
+pub fn is_cbor_sorted<T>(indices: &[(T, u64)]) -> bool
+where
+  T: CborWrite + std::cmp::PartialEq,
+{
+  let mut a_cur = Cursor::new(Vec::new());
+  let mut b_cur = Cursor::new(Vec::new());
+
+  // Get the first element as the previous element.
+  let mut prev_cur: &T = &indices[0].0;
+  let mut prev_offset = indices[0].1;
+  let rest = indices.iter().skip(1);
+
+  // For the rest, check if they're sorted.
+  for (key, offset) in rest {
+    a_cur.set_position(0);
+    b_cur.set_position(0);
+    key.cbor_write(&mut a_cur).unwrap();
+    prev_cur.cbor_write(&mut b_cur).unwrap();
+    let mut r = cbor_byte_cmp(&a_cur, &b_cur);
+
+    if r == std::cmp::Ordering::Equal {
+      r = offset.cmp(&prev_offset);
+    }
+
+    if r == std::cmp::Ordering::Less {
+      return false;
+    }
+
+    prev_cur = key;
+    prev_offset = *offset;
+  }
+
+  true
+}
+
 #[cfg(test)]
 mod tests {
   use common_testing::assert;
@@ -849,6 +909,42 @@ mod tests {
         ("00", 1), // cbor sorts by bytes, not by string
       ],
     );
+  }
+
+  #[test]
+  fn is_cbor_sorted_works() {
+    let mut indices = [(2, 1), (1, 2), (5, 2), (1, 1), (2, 2), (4, 2), (3, 2), (4, 1)];
+    assert::equal(is_cbor_sorted(&indices), false);
+    cbor_sort(&mut indices);
+    assert::equal(is_cbor_sorted(&indices), true);
+
+    let mut indices = [
+      (vec![2], 1),
+      (vec![1], 2),
+      (vec![5], 2),
+      (vec![1], 1),
+      (vec![2], 2),
+      (vec![4], 2),
+      (vec![3], 2),
+      (vec![4], 1),
+    ];
+    assert::equal(is_cbor_sorted(&indices), false);
+    cbor_sort(&mut indices);
+    assert::equal(is_cbor_sorted(&indices), true);
+
+    let mut indices = [
+      ("2", 1),
+      ("1", 2),
+      ("5", 2),
+      ("1", 1),
+      ("2", 2),
+      ("4", 2),
+      ("3", 2),
+      ("00", 1),
+    ];
+    assert::equal(is_cbor_sorted(&indices), false);
+    cbor_sort(&mut indices);
+    assert::equal(is_cbor_sorted(&indices), true);
   }
 
   #[test]
