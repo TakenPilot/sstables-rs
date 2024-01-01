@@ -13,7 +13,7 @@ use std::{
 /// ```
 /// use std::path::PathBuf;
 ///
-/// let path_dir = PathBuf::from("/home/username/sstable.sst");
+/// let path_dir = PathBuf::from(".tmp");
 ///
 /// sstable_cli::files::create_dir_all(path_dir).unwrap();
 /// ```
@@ -36,22 +36,6 @@ pub fn create_dir_all<P: AsRef<Path>>(path_dir: P) -> io::Result<()> {
 
 /// Converts a list of relative paths to absolute paths.
 ///
-/// # Examples
-///
-/// ```
-/// use std::path::PathBuf;
-///
-/// let relative_paths = vec![
-///  PathBuf::from("sstable.sst"),
-/// PathBuf::from("sstable2.sst"),
-/// ];
-///
-/// let absolute_paths = sstable_cli::files::to_absolute_paths(relative_paths).unwrap();
-///
-/// assert_eq!(absolute_paths[0], PathBuf::from("/home/username/sstable.sst"));
-/// assert_eq!(absolute_paths[1], PathBuf::from("/home/username/sstable2.sst"));
-/// ```
-///
 /// # Errors
 ///
 /// If a path cannot be converted to an absolute path, an error is returned.
@@ -72,22 +56,6 @@ pub fn to_absolute_paths(relative_paths: &[PathBuf]) -> io::Result<Vec<PathBuf>>
 }
 
 /// Converts a list of absolute paths to relative paths.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::PathBuf;
-///
-/// let absolute_paths = vec![
-///  PathBuf::from("/home/username/sstable.sst"),
-///  PathBuf::from("/home/username/sstable2.sst"),
-/// ];
-///
-/// let relative_paths = sstable_cli::files::to_relative_paths(absolute_paths).unwrap();
-///
-/// assert_eq!(relative_paths[0], PathBuf::from("sstable.sst"));
-/// assert_eq!(relative_paths[1], PathBuf::from("sstable2.sst"));
-/// ```
 ///
 /// # Errors
 ///

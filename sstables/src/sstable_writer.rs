@@ -20,14 +20,13 @@
 //! ```
 //! use sstables::sstable_writer::SSTableWriterBuilder;
 //! use sstables::sstable_writer::SSTableWriter;
-//! use sstables::sstable_writer::SSTableWriterAppend;
+//! use sstables::traits::Append;
 //!
 //! let mut writer = SSTableWriterBuilder::new("test")
 //!   .build()
 //!   .unwrap();
 //!
-//! writer.append("hello").unwrap();
-//! writer.append("world").unwrap();
+//! writer.append(("hello", "world")).unwrap();
 //! ```
 //!
 //!
@@ -48,6 +47,7 @@
 
 use crate::cbor::{write_cbor_bytes, write_cbor_head, write_cbor_text, MajorType};
 use crate::read::{create_index_path, get_file_writer};
+use crate::Append;
 use std::fs::File;
 use std::io::{self, BufWriter, Result, Seek, Write};
 use std::marker::PhantomData;
@@ -63,14 +63,13 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::sstable_writer::SSTableWriterAppend;
+/// use sstables::traits::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .build()
 ///  .unwrap();
 ///
-/// writer.append("hello").unwrap();
-/// writer.append("world").unwrap();
+/// writer.append(("hello", "world")).unwrap();
 /// ```
 ///
 /// # Example
@@ -78,7 +77,7 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::sstable_writer::SSTableWriterAppend;
+/// use sstables::traits::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .index_writer_path("test.index")
@@ -86,8 +85,7 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 ///  .build()
 ///  .unwrap();
 ///
-/// writer.append("hello").unwrap();
-/// writer.append("world").unwrap();
+/// writer.append(("hello", "world")).unwrap();
 /// ```
 pub struct SSTableWriterBuilder<T> {
   data_writer_path: PathBuf,
@@ -180,33 +178,7 @@ impl<T> SSTableWriter<T> {
   }
 }
 
-/// Trait for appending entries to an SSTableWriter. This trait is implemented for several
-/// combinations of types, but you can also use them as examples to extend your own.
-pub trait SSTableWriterAppend<T> {
-  fn append(&mut self, entry: T) -> io::Result<()>;
-}
-
-impl SSTableWriterAppend<&[u8]> for SSTableWriter<&[u8]> {
-  /// Appends a value into the data file, and the file offset position into the index.
-  fn append(&mut self, entry: &[u8]) -> io::Result<()> {
-    let initial_offset = self.data_writer.stream_position()?;
-
-    write_cbor_bytes(&mut self.data_writer, entry)
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
-  }
-}
-
-impl SSTableWriterAppend<&str> for SSTableWriter<&str> {
-  /// Appends a value into the data file, and the file offset position into the index.
-  fn append(&mut self, entry: &str) -> io::Result<()> {
-    let initial_offset = self.data_writer.stream_position()?;
-
-    write_cbor_text(&mut self.data_writer, entry)
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
-  }
-}
-
-impl SSTableWriterAppend<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
+impl Append<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (&[u8], &[u8])) -> io::Result<()> {
     let initial_offset = self.data_writer.stream_position()?;
@@ -218,7 +190,7 @@ impl SSTableWriterAppend<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
   }
 }
 
-impl SSTableWriterAppend<(&str, &str)> for SSTableWriter<(&str, &str)> {
+impl Append<(&str, &str)> for SSTableWriter<(&str, &str)> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (&str, &str)) -> io::Result<()> {
     let initial_offset = self.data_writer.stream_position()?;
@@ -230,7 +202,7 @@ impl SSTableWriterAppend<(&str, &str)> for SSTableWriter<(&str, &str)> {
   }
 }
 
-impl SSTableWriterAppend<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
+impl Append<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
   /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
   fn append(&mut self, entry: (u64, &[u8])) -> io::Result<()> {
     let initial_offset = self.data_writer.stream_position()?;
@@ -257,42 +229,6 @@ mod tests {
 
   const TEST_FILE_NAME: &str = ".tmp/test.sst";
   const TEST_INDEX_FILE_NAME: &str = ".tmp/test.index.sst";
-
-  #[test]
-  fn test_append_bytes() {
-    let _lock = setup::sequential();
-    setup::remove_file(TEST_FILE_NAME).unwrap();
-    setup::remove_file(TEST_INDEX_FILE_NAME).unwrap();
-
-    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-
-    writer.append(b"hello".as_slice()).unwrap();
-    writer.append(b"world").unwrap();
-    writer.close().unwrap();
-
-    let mut reader = SSTableReader::<Vec<u8>>::from_path(TEST_FILE_NAME).unwrap();
-    assert::equal(reader.next(), b"hello".to_vec());
-    assert::equal(reader.next(), b"world".as_slice());
-    assert::none(&reader.next());
-  }
-
-  #[test]
-  fn test_append_strings() {
-    let _lock = setup::sequential();
-    fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
-    fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
-
-    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-
-    writer.append("hello").unwrap();
-    writer.append("world").unwrap();
-    writer.close().unwrap();
-
-    let mut reader = SSTableReader::<String>::from_path(TEST_FILE_NAME).unwrap();
-    assert::equal(reader.next(), "hello");
-    assert::equal(reader.next(), "world");
-    assert::none(&reader.next());
-  }
 
   #[test]
   fn test_append_string_tuple() {
@@ -324,60 +260,6 @@ mod tests {
     let mut reader = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
     assert::equal(reader.next(), (b"hello".to_vec(), b"world".to_vec()));
     assert::none(&reader.next());
-  }
-
-  #[test]
-  fn test_append_bytes_with_index() {
-    let _lock = setup::sequential();
-    fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
-    fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
-
-    // Should create index file
-    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-    writer.append(b"hello".as_slice()).unwrap();
-    writer.append(b"world").unwrap();
-    writer.close().unwrap();
-
-    // Should use index file
-    let mut sstable = SSTableReader::<Vec<u8>>::from_path(TEST_FILE_NAME).unwrap();
-    let sstable_index = SSTableIndex::<u64>::from_path(TEST_INDEX_FILE_NAME).unwrap();
-
-    let mut sstable_index_iter = sstable_index.indices.iter();
-    assert::equal(sstable.next(), b"hello".as_slice());
-    assert::equal(sstable_index_iter.next(), &0);
-
-    assert::equal(sstable.next(), b"world".as_slice());
-    assert::equal(sstable_index_iter.next(), &6);
-
-    assert::none(&sstable.next());
-    assert::none(&sstable_index_iter.next());
-  }
-
-  #[test]
-  fn test_append_string_with_index() {
-    let _lock = setup::sequential();
-    fs::remove_file(TEST_FILE_NAME).unwrap_or_default();
-    fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
-
-    // Should create index file
-    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-    writer.append("hello").unwrap();
-    writer.append("world").unwrap();
-    writer.close().unwrap();
-
-    // Should use index file
-    let mut sstable = SSTableReader::<String>::from_path(TEST_FILE_NAME).unwrap();
-    let sstable_index = SSTableIndex::<u64>::from_path(TEST_INDEX_FILE_NAME).unwrap();
-
-    let mut sstable_index_iter = sstable_index.indices.iter();
-    assert::equal(sstable.next(), "hello");
-    assert::equal(sstable_index_iter.next(), &0);
-
-    assert::equal(sstable.next(), "world");
-    assert::equal(sstable_index_iter.next(), &6);
-
-    assert::none(&sstable.next());
-    assert::none(&sstable_index_iter.next());
   }
 
   #[test]

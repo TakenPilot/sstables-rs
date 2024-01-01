@@ -1,6 +1,6 @@
 //! Output writer appends key-values to a file or stdout in various append-only formats.
 
-use sstables::{SSTableWriter, SSTableWriterAppend, SSTableWriterBuilder};
+use sstables::{Append, SSTableWriter, SSTableWriterBuilder};
 use std::{
   io::{self, BufWriter, Stdout, Write},
   path::PathBuf,
@@ -37,7 +37,7 @@ impl OutputWriterBuilder {
 }
 
 pub enum OutputWriter {
-  SSTable(Box<dyn for<'a, 'b> SSTableWriterAppend<(&'a str, &'b str)>>),
+  SSTable(Box<dyn for<'a, 'b> Append<(&'a str, &'b str)>>),
   Stdout(BufWriter<Stdout>),
 }
 

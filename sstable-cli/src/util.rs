@@ -1,10 +1,22 @@
 use std::cmp::Ordering;
 
+/// Returns true if the slice is sorted by the given comparison function.
+/// # Examples
+/// ```
+/// use sstable_cli::util::is_sorted_by;
+/// let slice = &[1, 2, 3, 4, 5];
+/// let sorted = is_sorted_by(slice, |a, b| a.cmp(b));
+/// assert_eq!(sorted, true);
+/// 
+/// let slice = &[1, 2, 3, 5, 4];
+/// let sorted = is_sorted_by(slice, |a, b| a.cmp(b));
+/// assert_eq!(sorted, false);
+/// ```
 pub fn is_sorted_by<T, F>(slice: &[T], mut compare: F) -> bool
 where
-  F: FnMut(&T, &T) -> bool,
+  F: FnMut(&T, &T) -> Ordering,
 {
-  slice.windows(2).all(|w| compare(&w[0], &w[1]))
+  slice.windows(2).all(|w| compare(&w[0], &w[1]) != Ordering::Greater)
 }
 
 /// Returns the min and max of a slice of `Ord` items. If the slice is empty,
@@ -13,7 +25,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use sstable_cli::get_min_max;
+/// use sstable_cli::util::get_min_max;
 ///
 /// let slice = &[2, 1, 3, 5, 4];
 /// let (min, max) = get_min_max(slice).unwrap();
@@ -48,7 +60,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use sstable_cli::is_unique;
+/// use sstable_cli::util::is_unique;
 ///
 /// let slice = &[2, 1, 3, 5, 4];
 /// let unique = is_unique(slice, |a, b| a == b);

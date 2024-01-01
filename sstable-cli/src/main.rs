@@ -13,9 +13,7 @@ use sstable_cli::{
   outputs::{KeyValueWriter, OutputDestination, OutputWriter, OutputWriterBuilder},
   util::{compare_tuples, get_min_max, is_sorted_by, is_unique},
 };
-use sstables::{
-  cbor::is_cbor_sorted, FromPath, SSTableIndex, SSTableReader, SSTableWriterAppend, SSTableWriterBuilder,
-};
+use sstables::{cbor::is_cbor_sorted, Append, FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
 use std::{
   cmp::Reverse,
   collections::BinaryHeap,
@@ -158,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
           let sstable_index = SSTableIndex::<(String, u64)>::from_path(&input_index_path)?;
           println!(" count: {}", sstable_index.indices.len());
 
-          let native_sorted = is_sorted_by(&sstable_index.indices, |a, b| a.0 <= b.0);
+          let native_sorted = is_sorted_by(&sstable_index.indices, compare_tuples);
           let cbor_sorted = is_cbor_sorted(&sstable_index.indices);
           let sorted = match (native_sorted, cbor_sorted) {
             (true, true) => "native,cbor".green(),
