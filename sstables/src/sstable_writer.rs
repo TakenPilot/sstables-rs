@@ -248,8 +248,9 @@ mod tests {
   use std::fs;
 
   use crate::cbor::{cbor_binary_search_first, cbor_sort};
-  use crate::sstable_reader::{SSTableIndex, SSTableIndexFromPath, SSTableReader};
+  use crate::sstable_reader::{SSTableIndex, SSTableReader};
   use crate::sstable_writer::SSTableWriterBuilder;
+  use crate::traits::FromPath;
 
   use super::*;
 

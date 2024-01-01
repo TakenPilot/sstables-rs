@@ -14,9 +14,11 @@ use sstable_cli::{
   util::{get_min_max, is_sorted_by, is_unique},
 };
 use sstables::{
-  cbor::is_cbor_sorted, SSTableIndex, SSTableIndexFromPath, SSTableReader, SSTableWriterAppend, SSTableWriterBuilder,
+  cbor::is_cbor_sorted, FromPath, SSTableIndex, SSTableReader, SSTableWriterAppend, SSTableWriterBuilder,
 };
 use std::{
+  cmp::Reverse,
+  collections::BinaryHeap,
   io,
   path::{Path, PathBuf},
 };
@@ -40,47 +42,39 @@ fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> 
 }
 
 /// Merge the SSTables by reading the lowest key from each index and writing it to the output
-/// file. Repeat until all keys have been read. This is a naive implementation that is not
-/// suitable for large SSTables because it requires all of the indices to be loaded into memory,
-/// and it requires all of the data files to be open at the same time. It is useful for testing.
-/// It is not useful for production.
+/// file. This is a simple implementation that does not use a heap. It is O(n^2) in the number of
+/// SSTables. It is also not memory efficient, as it reads the entire index of each SSTable into
+/// memory. It is also not space efficient, as it writes the entire index of each SSTable to the
+/// output file. It is also not time efficient, as it seeks to the offset of each key-value pair
+/// in each SSTable. It is also not parallelizable, as it reads and writes to a single file. It is
+/// also not fault tolerant, as it does not handle errors. It is also not configurable, as it does
+/// not allow the user to specify the number of SSTables to merge at a time. It is also not
+/// extensible, as it does not allow the user to specify a custom comparator.
 fn merge_sorted_sstable_index_pairs(
-  sstable_index_pairs: &mut Vec<(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)>,
+  sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)],
   emitter: &mut impl KeyValueWriter,
 ) -> io::Result<()> {
-  let mut is_done = false;
-  // Create a vector of cursors to track how far we've read in each index.
-  let mut indices_cursors = vec![0; sstable_index_pairs.len()];
-  while !is_done {
-    let mut min_key: Option<String> = None;
-    let mut min_index = 0;
-    let mut min_offset = 0;
-    for (i, (_, sstable_index)) in sstable_index_pairs.iter().enumerate() {
-      let index_cursor = indices_cursors[i];
+  let mut heap = BinaryHeap::new();
 
-      if let Some((key, offset)) = sstable_index.indices.get(index_cursor) {
-        let is_less_than_min_key = match &min_key {
-          Some(min_key) => key < min_key,
-          None => true,
-        };
-
-        if is_less_than_min_key {
-          min_key = Some(key.clone());
-          min_index = i;
-          min_offset = *offset;
-        }
-      }
+  // Initialize the heap with the first key from each SSTable index
+  for (pair_index, (_sstable, sstable_index)) in sstable_index_pairs.iter().enumerate() {
+    let index_pos = 0;
+    if let Some((key, offset)) = sstable_index.indices.get(index_pos) {
+      heap.push(Reverse((key.clone(), pair_index, index_pos, *offset)));
     }
+  }
 
-    if let Some(_min_key) = &min_key {
-      if let Some((sstable, _)) = sstable_index_pairs.get_mut(min_index) {
-        sstable.seek(min_offset)?;
-        let (key, value) = sstable.next().unwrap()?;
-        emitter.write(&key, &value)?;
-        indices_cursors[min_index] += 1;
-      }
-    } else {
-      is_done = true;
+  while let Some(Reverse((key, pair_index, index_pos, offset))) = heap.pop() {
+    // Process key-value pair
+    let (sstable, _) = &mut sstable_index_pairs[pair_index];
+    sstable.seek(offset)?;
+    let (_, value) = sstable.next().unwrap()?;
+    emitter.write(&key, &value)?;
+
+    // Insert the next key from this SSTable index into the heap
+    let next_index_pos = index_pos + 1;
+    if let Some((next_key, next_offset)) = sstable_index_pairs[pair_index].1.indices.get(next_index_pos) {
+      heap.push(Reverse((next_key.clone(), pair_index, next_index_pos, *next_offset)));
     }
   }
 

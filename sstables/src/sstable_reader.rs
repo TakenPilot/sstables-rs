@@ -1,8 +1,8 @@
+use crate::cbor::{read_cbor_bytes, read_cbor_text, read_cbor_u64};
+use crate::traits::FromPath;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Seek};
 use std::path::Path;
-
-use crate::cbor::{read_cbor_bytes, read_cbor_text, read_cbor_u64};
 
 /// Reads and holds the indices of an SSTable in memory, so that we can seek to
 /// the correct position in the data file. We can perform binary search on the
@@ -13,15 +13,7 @@ pub struct SSTableIndex<T> {
   pub indices: Vec<T>,
 }
 
-/// A trait for reading an SSTable index from a file path. There are multiple
-/// implementations of this trait, one for each type of index.
-pub trait SSTableIndexFromPath<T> {
-  fn from_path<P: AsRef<std::path::Path>>(path: P) -> io::Result<Self>
-  where
-    Self: std::marker::Sized;
-}
-
-impl SSTableIndexFromPath<u64> for SSTableIndex<u64> {
+impl FromPath<u64> for SSTableIndex<u64> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -36,7 +28,7 @@ impl SSTableIndexFromPath<u64> for SSTableIndex<u64> {
   }
 }
 
-impl SSTableIndexFromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
+impl FromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -51,7 +43,7 @@ impl SSTableIndexFromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
   }
 }
 
-impl SSTableIndexFromPath<(String, u64)> for SSTableIndex<(String, u64)> {
+impl FromPath<(String, u64)> for SSTableIndex<(String, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -66,7 +58,7 @@ impl SSTableIndexFromPath<(String, u64)> for SSTableIndex<(String, u64)> {
   }
 }
 
-impl SSTableIndexFromPath<(u64, u64)> for SSTableIndex<(u64, u64)> {
+impl FromPath<(u64, u64)> for SSTableIndex<(u64, u64)> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
