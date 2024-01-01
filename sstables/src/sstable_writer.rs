@@ -246,6 +246,7 @@ impl SSTableWriterAppend<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
 mod tests {
   use common_testing::{assert, setup};
   use std::fs;
+  use std::io::SeekFrom;
 
   use crate::cbor::{cbor_binary_search_first, cbor_sort};
   use crate::sstable_reader::{SSTableIndex, SSTableReader};
@@ -550,7 +551,9 @@ mod tests {
 
     let mut sstable = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
 
-    sstable.seek(sstable_index.indices[b.unwrap()].1).unwrap();
+    sstable
+      .seek(SeekFrom::Start(sstable_index.indices[b.unwrap()].1))
+      .unwrap();
     // We can read five "foo" entries from the data file, because we wrote five "foo" entries to
     // the data file. The index search always refers to the first "foo" entry in the index file.
     for _ in 0..5 {

@@ -11,7 +11,7 @@ use sstable_cli::{
   cmds::{get_cli, Commands},
   files::{self, create_index_path, get_file_size, get_path_str},
   outputs::{KeyValueWriter, OutputDestination, OutputWriter, OutputWriterBuilder},
-  util::{get_min_max, is_sorted_by, is_unique},
+  util::{compare_tuples, get_min_max, is_sorted_by, is_unique},
 };
 use sstables::{
   cbor::is_cbor_sorted, FromPath, SSTableIndex, SSTableReader, SSTableWriterAppend, SSTableWriterBuilder,
@@ -19,7 +19,7 @@ use sstables::{
 use std::{
   cmp::Reverse,
   collections::BinaryHeap,
-  io,
+  io::{self, Seek, SeekFrom},
   path::{Path, PathBuf},
 };
 
@@ -29,7 +29,7 @@ const CONSOLE_CROSS: &str = "\u{2718}";
 fn get_sorted_sstable_index(index_path: &Path) -> io::Result<SSTableIndex<(String, u64)>> {
   let mut sstable_index = SSTableIndex::<(String, u64)>::from_path(index_path)?;
   // Sort the index file in-place.
-  sstable_index.indices.sort_by(|a, b| a.0.cmp(&b.0));
+  sstable_index.indices.sort_by(compare_tuples);
   Ok(sstable_index)
 }
 
@@ -47,9 +47,12 @@ fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> 
 /// memory. It is also not space efficient, as it writes the entire index of each SSTable to the
 /// output file. It is also not time efficient, as it seeks to the offset of each key-value pair
 /// in each SSTable. It is also not parallelizable, as it reads and writes to a single file. It is
-/// also not fault tolerant, as it does not handle errors. It is also not configurable, as it does
-/// not allow the user to specify the number of SSTables to merge at a time. It is also not
-/// extensible, as it does not allow the user to specify a custom comparator.
+/// also not fault tolerant, as it does not handle errors.
+///
+/// Future: To use a custom sort order, use a custom tuple that implements it's own `PartialOrd` and
+/// `Ord` traits so that the `BinaryHeap` will sort the keys consistently. We would have to change
+/// this function to allow the caller to specify their own tuple types.
+///
 fn merge_sorted_sstable_index_pairs(
   sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)],
   emitter: &mut impl KeyValueWriter,
@@ -67,7 +70,7 @@ fn merge_sorted_sstable_index_pairs(
   while let Some(Reverse((key, pair_index, index_pos, offset))) = heap.pop() {
     // Process key-value pair
     let (sstable, _) = &mut sstable_index_pairs[pair_index];
-    sstable.seek(offset)?;
+    sstable.seek(SeekFrom::Start(offset))?;
     let (_, value) = sstable.next().unwrap()?;
     emitter.write(&key, &value)?;
 

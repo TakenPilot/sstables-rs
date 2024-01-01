@@ -80,17 +80,18 @@ pub struct SSTableReader<T> {
   phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> SSTableReader<T> {
-  pub fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+impl<T> Seek for SSTableReader<T> {
+  fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+    self.data_reader.seek(pos)
+  }
+}
+
+impl<T> FromPath<T> for SSTableReader<T> {
+  fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     Ok(SSTableReader {
       data_reader: BufReader::new(File::open(path)?),
       phantom: std::marker::PhantomData,
     })
-  }
-
-  /// Seeks to the given offset in the data file.
-  pub fn seek(&mut self, offset: u64) -> io::Result<u64> {
-    self.data_reader.seek(io::SeekFrom::Start(offset))
   }
 }
 

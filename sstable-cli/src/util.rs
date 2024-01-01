@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub fn is_sorted_by<T, F>(slice: &[T], mut compare: F) -> bool
 where
   F: FnMut(&T, &T) -> bool,
@@ -64,4 +66,18 @@ pub fn is_unique<T>(slice: &[T], compare: fn(&T, &T) -> bool) -> bool {
     last_key = key;
   }
   unique
+}
+
+/// Compares two tuples by their first element.
+/// # Examples
+///
+/// ```
+/// use sstable_cli::util::compare_tuples;
+///
+/// assert_eq!(compare_tuples(&(1, 2), &(1, 3)), std::cmp::Ordering::Equal);
+/// assert_eq!(compare_tuples(&(1, 2), &(2, 3)), std::cmp::Ordering::Less);
+/// assert_eq!(compare_tuples(&(2, 2), &(1, 3)), std::cmp::Ordering::Greater);
+/// ```
+pub fn compare_tuples<T: Ord, U>(a: &(T, U), b: &(T, U)) -> Ordering {
+  a.0.cmp(&b.0)
 }
