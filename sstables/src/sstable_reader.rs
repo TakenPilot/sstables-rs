@@ -1,57 +1,42 @@
-use crate::cbor::{read_cbor_bytes, read_cbor_text, read_cbor_u64};
+use crate::cbor::{read_cbor_u64, CborRead};
 use crate::traits::FromPath;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, BufReader, Seek};
 use std::path::Path;
 
 /// Reads and holds the indices of an SSTable in memory, so that we can seek to
 /// the correct position in the data file. We can perform binary search on the
-/// index to find the correct position. There are two implementations of this
-/// trait: one for tuples of (key, offset) and one for a simple series of
-/// offsets.
+/// index to find the correct position.
 pub struct SSTableIndex<K> {
   pub indices: Vec<(K, u64)>,
 }
 
-impl FromPath<Vec<u8>> for SSTableIndex<Vec<u8>> {
+/// Implementation of FromPath for SSTableIndex for any type that implements
+/// CborRead. The index is stored as a series of CBOR-encoded tuples of
+/// (key, offset). The index is read entirely into memory when the SSTableIndex
+/// is created.
+impl<T> FromPath<T> for SSTableIndex<T>
+where
+  io::BufReader<File>: CborRead<T>,
+{
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-    let buffer = fs::read(path)?;
-    let len = buffer.len() as u64;
-    let mut cursor = io::Cursor::new(buffer);
+    let mut reader = BufReader::new(File::open(path)?);
     let mut indices = Vec::new();
 
-    while cursor.position() < len {
-      indices.push((read_cbor_bytes(&mut cursor)?, read_cbor_u64(&mut cursor)?));
-    }
+    // Read the entire file into memory.
+    loop {
+      let result = match reader
+        .cbor_read()
+        .and_then(|k| read_cbor_u64(&mut reader).map(|v| (k, v)))
+      {
+        Ok(x) => Ok(x),
+        Err(e) => match e.kind() {
+          io::ErrorKind::UnexpectedEof => break,
+          _ => Err(e),
+        },
+      }?;
 
-    Ok(SSTableIndex { indices })
-  }
-}
-
-impl FromPath<String> for SSTableIndex<String> {
-  fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-    let buffer = fs::read(path)?;
-    let len = buffer.len() as u64;
-    let mut cursor = io::Cursor::new(buffer);
-    let mut indices = Vec::new();
-
-    while cursor.position() < len {
-      indices.push((read_cbor_text(&mut cursor)?, read_cbor_u64(&mut cursor)?));
-    }
-
-    Ok(SSTableIndex { indices })
-  }
-}
-
-impl FromPath<u64> for SSTableIndex<u64> {
-  fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-    let buffer = fs::read(path)?;
-    let len = buffer.len() as u64;
-    let mut cursor = io::Cursor::new(buffer);
-    let mut indices = Vec::new();
-
-    while cursor.position() < len {
-      indices.push((read_cbor_u64(&mut cursor)?, read_cbor_u64(&mut cursor)?));
+      indices.push(result);
     }
 
     Ok(SSTableIndex { indices })
@@ -74,92 +59,34 @@ impl<T> FromPath<T> for SSTableReader<T> {
   }
 }
 
+/// Implementation of Seek for SSTableReader. The seek operation is delegated to
+/// the underlying reader.
 impl<T> Seek for SSTableReader<T> {
   fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
     self.data_reader.seek(pos)
   }
 }
 
-impl Iterator for SSTableReader<(Vec<u8>, Vec<u8>)> {
-  type Item = io::Result<(Vec<u8>, Vec<u8>)>;
+/// Implementation of Iterator for SSTableReader for any type that implements
+/// CborRead. The iterator returns a series of tuples of (key, value). The
+/// iterator will return an error if the underlying reader returns an error, or
+/// None if the end of the file is reached.
+impl<T> Iterator for SSTableReader<(T, T)>
+where
+  io::BufReader<File>: CborRead<T>,
+{
+  type Item = io::Result<(T, T)>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let result =
-      read_cbor_bytes(&mut self.data_reader).and_then(|k| read_cbor_bytes(&mut self.data_reader).map(|v| (k, v)));
+    let reader = &mut self.data_reader;
+    let result = reader.cbor_read().and_then(|k| reader.cbor_read().map(|v| (k, v)));
 
     match result {
-      Ok((k, v)) => Some(Ok((k, v))),
+      Ok(x) => Some(Ok(x)),
       Err(e) => match e.kind() {
         io::ErrorKind::UnexpectedEof => None,
         _ => Some(Err(e)),
       },
     }
-  }
-}
-
-impl Iterator for SSTableReader<(String, String)> {
-  type Item = io::Result<(String, String)>;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    let result =
-      read_cbor_text(&mut self.data_reader).and_then(|k| read_cbor_text(&mut self.data_reader).map(|v| (k, v)));
-
-    match result {
-      Ok((k, v)) => Some(Ok((k, v))),
-      Err(e) => match e.kind() {
-        io::ErrorKind::UnexpectedEof => None,
-        _ => Some(Err(e)),
-      },
-    }
-  }
-}
-
-impl Iterator for SSTableReader<Vec<u8>> {
-  type Item = io::Result<Vec<u8>>;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    let result = read_cbor_bytes(&mut self.data_reader);
-
-    match result {
-      Ok(v) => Some(Ok(v)),
-      Err(e) => match e.kind() {
-        io::ErrorKind::UnexpectedEof => None,
-        _ => Some(Err(e)),
-      },
-    }
-  }
-}
-
-impl Iterator for SSTableReader<String> {
-  type Item = io::Result<String>;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    let result = read_cbor_text(&mut self.data_reader);
-
-    match result {
-      Ok(v) => Some(Ok(v)),
-      Err(e) => match e.kind() {
-        io::ErrorKind::UnexpectedEof => None,
-        _ => Some(Err(e)),
-      },
-    }
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use common_testing::{assert, setup};
-
-  #[test]
-  fn test_sstable_reader_bytes() {
-    let _lock = setup::sequential();
-    let fixture_path = "./.tmp/test.sst";
-
-    let mut reader = SSTableReader::<Vec<u8>>::from_path(fixture_path).unwrap();
-    assert::equal(reader.next(), vec![67]);
-    assert::equal(reader.next(), vec![97, 122]);
-    assert::equal(reader.next(), vec![69, 99]);
-    // assert::none(&reader.next());
   }
 }

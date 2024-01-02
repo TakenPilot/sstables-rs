@@ -12,7 +12,10 @@
 //! The value is stored in the bytes following the initial byte.
 //!
 
-use std::io::{self, Cursor, Read, Write};
+use std::{
+  fs::File,
+  io::{self, Cursor, Read, Write},
+};
 
 use crate::read::{take_byte, take_byte_array, take_byte_slice};
 
@@ -255,6 +258,30 @@ pub fn read_cbor_head_u64<R: Read + ?Sized>(b: &mut R, byte: u8) -> io::Result<u
     ExtendedSize::U32 => u32::from_be_bytes(take_byte_array(b)?).into(),
     ExtendedSize::U64 => u64::from_be_bytes(take_byte_array(b)?),
   })
+}
+
+/// A trait for reading CBOR from a cursor.
+pub trait CborRead<R> {
+  /// Reads a CBOR value from the given reader.
+  fn cbor_read(&mut self) -> io::Result<R>;
+}
+
+impl CborRead<Vec<u8>> for io::BufReader<File> {
+  fn cbor_read(&mut self) -> io::Result<Vec<u8>> {
+    read_cbor_bytes(self)
+  }
+}
+
+impl CborRead<String> for io::BufReader<File> {
+  fn cbor_read(&mut self) -> io::Result<String> {
+    read_cbor_text(self)
+  }
+}
+
+impl CborRead<u64> for io::BufReader<File> {
+  fn cbor_read(&mut self) -> io::Result<u64> {
+    read_cbor_u64(self)
+  }
 }
 
 /// Assuming that the next value is known to be an unsigned integer, read it. May
