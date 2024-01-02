@@ -24,8 +24,12 @@ use std::{
 const CONSOLE_CHECKMARK: &str = "\u{2714}";
 const CONSOLE_CROSS: &str = "\u{2718}";
 
-fn get_sorted_sstable_index(index_path: &Path) -> io::Result<SSTableIndex<(String, u64)>> {
-  let mut sstable_index = SSTableIndex::<(String, u64)>::from_path(index_path)?;
+fn get_sorted_sstable_index<K>(index_path: &Path) -> io::Result<SSTableIndex<K>>
+where
+  K: Ord,
+  SSTableIndex<K>: FromPath<K>,
+{
+  let mut sstable_index = SSTableIndex::<K>::from_path(index_path)?;
   // Sort the index file in-place.
   sstable_index.indices.sort_by(compare_tuples);
   Ok(sstable_index)
@@ -52,7 +56,7 @@ fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> 
 /// this function to allow the caller to specify their own tuple types.
 ///
 fn merge_sorted_sstable_index_pairs(
-  sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)],
+  sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<String>)],
   emitter: &mut OutputWriter,
 ) -> io::Result<()> {
   let mut heap = BinaryHeap::new();
@@ -103,7 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !input_path.is_file() {
           println!("File does not exist: {}", get_path_str(input_path))
         } else {
-          let sstable_index = SSTableIndex::<(String, u64)>::from_path(create_index_path(input_path))?;
+          let sstable_index = SSTableIndex::<String>::from_path(create_index_path(input_path))?;
           for (key, offset) in sstable_index.indices {
             println!("{}: {}", key, offset);
           }
@@ -154,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
           println!("index path: {} {}", input_index_path_str, exists_str);
           println!(" size: {}", get_file_size(&input_index_path)?);
 
-          let sstable_index = SSTableIndex::<(String, u64)>::from_path(&input_index_path)?;
+          let sstable_index = SSTableIndex::<String>::from_path(&input_index_path)?;
           println!(" count: {}", sstable_index.indices.len());
 
           let native_sorted = is_sorted_by(&sstable_index.indices, compare_tuples);
@@ -263,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_sorted_sstable_index(&create_index_path(input_path))?,
           ))
         })
-        .collect::<io::Result<Vec<(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)>>>()?;
+        .collect::<io::Result<Vec<(SSTableReader<(String, String)>, SSTableIndex<String>)>>>()?;
 
       let mut output_writer = get_output_writer(output_path)?;
 

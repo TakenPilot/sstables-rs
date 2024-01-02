@@ -9,26 +9,11 @@ use std::path::Path;
 /// index to find the correct position. There are two implementations of this
 /// trait: one for tuples of (key, offset) and one for a simple series of
 /// offsets.
-pub struct SSTableIndex<T> {
-  pub indices: Vec<T>,
+pub struct SSTableIndex<K> {
+  pub indices: Vec<(K, u64)>,
 }
 
-impl FromPath<u64> for SSTableIndex<u64> {
-  fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-    let buffer = fs::read(path)?;
-    let len = buffer.len() as u64;
-    let mut cursor = io::Cursor::new(buffer);
-    let mut indices = Vec::new();
-
-    while cursor.position() < len {
-      indices.push(read_cbor_u64(&mut cursor)?);
-    }
-
-    Ok(SSTableIndex { indices })
-  }
-}
-
-impl FromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
+impl FromPath<Vec<u8>> for SSTableIndex<Vec<u8>> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -43,7 +28,7 @@ impl FromPath<(Vec<u8>, u64)> for SSTableIndex<(Vec<u8>, u64)> {
   }
 }
 
-impl FromPath<(String, u64)> for SSTableIndex<(String, u64)> {
+impl FromPath<String> for SSTableIndex<String> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;
@@ -58,7 +43,7 @@ impl FromPath<(String, u64)> for SSTableIndex<(String, u64)> {
   }
 }
 
-impl FromPath<(u64, u64)> for SSTableIndex<(u64, u64)> {
+impl FromPath<u64> for SSTableIndex<u64> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     let buffer = fs::read(path)?;
     let len = buffer.len() as u64;

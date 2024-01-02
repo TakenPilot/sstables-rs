@@ -246,7 +246,7 @@ mod tests {
 
     // Should use index file
     let mut sstable = SSTableReader::<(String, String)>::from_path(TEST_FILE_NAME).unwrap();
-    let sstable_index = SSTableIndex::<(String, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let sstable_index = SSTableIndex::<String>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
     assert::equal(sstable.next(), ("hello".to_string(), "world".to_string()));
@@ -270,7 +270,7 @@ mod tests {
 
     // Should use index file
     let mut sstable = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
-    let sstable_index = SSTableIndex::<(Vec<u8>, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let sstable_index = SSTableIndex::<Vec<u8>>::from_path(TEST_INDEX_FILE_NAME).unwrap();
 
     let mut sstable_index_iter = sstable_index.indices.iter();
     assert::equal(sstable.next(), (b"hello".to_vec(), b"world".to_vec()));
@@ -300,7 +300,7 @@ mod tests {
     writer.close().unwrap();
 
     // Should use index file
-    let mut sstable_index = SSTableIndex::<(Vec<u8>, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let mut sstable_index = SSTableIndex::<Vec<u8>>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index
       .indices
       .binary_search_by_key(&b"hello".as_slice(), |(k, _)| k);
@@ -328,7 +328,7 @@ mod tests {
     writer.close().unwrap();
 
     // Should use index file
-    let mut sstable_index = SSTableIndex::<(String, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let mut sstable_index = SSTableIndex::<String>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index.indices.binary_search_by_key(&"hello", |(k, _)| k);
     assert::equal(a, 4);
 
@@ -354,7 +354,7 @@ mod tests {
     writer.close().unwrap();
 
     // Should use index file
-    let mut sstable_index = SSTableIndex::<(u64, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let mut sstable_index = SSTableIndex::<u64>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index.indices.binary_search_by_key(&5, |(k, _)| *k);
     assert::equal(a, 4);
 
@@ -381,7 +381,7 @@ mod tests {
     sstable_writer.close().unwrap();
 
     // Should use index file
-    let mut sstable_index = SSTableIndex::<(Vec<u8>, u64)>::from_path(TEST_INDEX_FILE_NAME).unwrap();
+    let mut sstable_index = SSTableIndex::<Vec<u8>>::from_path(TEST_INDEX_FILE_NAME).unwrap();
     let a = sstable_index
       .indices
       .binary_search_by_key(&b"foo".as_slice(), |(k, _)| k);
