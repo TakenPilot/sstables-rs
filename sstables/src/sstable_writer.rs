@@ -45,12 +45,10 @@
 //! the file cannot be flushed to disk. All errors are standard `io::Error`s.
 //!
 
-use crate::cbor::{write_cbor_bytes, write_cbor_head, write_cbor_text, MajorType};
+use crate::cbor::CborWrite;
 use crate::read::{create_index_path, get_file_writer};
-use crate::Append;
 use std::fs::File;
 use std::io::{self, BufWriter, Result, Seek, Write};
-use std::marker::PhantomData;
 use std::path::PathBuf;
 
 /// The default buffer size for the `SSTableWriter`.
@@ -87,20 +85,18 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 ///
 /// writer.append(("hello", "world")).unwrap();
 /// ```
-pub struct SSTableWriterBuilder<T> {
+pub struct SSTableWriterBuilder {
   data_writer_path: PathBuf,
   index_writer_path: Option<PathBuf>,
   buffer_size: usize,
-  phantom: PhantomData<T>,
 }
 
-impl<T> SSTableWriterBuilder<T> {
+impl SSTableWriterBuilder {
   pub fn new<P: Into<PathBuf>>(data_writer_path: P) -> Self {
     SSTableWriterBuilder {
       data_writer_path: data_writer_path.into(),
       index_writer_path: None,
       buffer_size: DEFAULT_BUFFER_SIZE,
-      phantom: PhantomData,
     }
   }
 
@@ -119,7 +115,7 @@ impl<T> SSTableWriterBuilder<T> {
   }
 
   /// Consumes the builder, returning a `SSTableWriter`.
-  pub fn build(self) -> io::Result<SSTableWriter<T>> {
+  pub fn build(self) -> io::Result<SSTableWriter> {
     let data_writer_path = self.data_writer_path;
     let data_writer = get_file_writer(&data_writer_path, self.buffer_size)?;
 
@@ -135,7 +131,6 @@ impl<T> SSTableWriterBuilder<T> {
       data_writer,
       index_writer_path,
       index_writer,
-      phantom: std::marker::PhantomData,
     })
   }
 }
@@ -145,15 +140,30 @@ impl<T> SSTableWriterBuilder<T> {
 /// and therefore can be read by any CBOR implementation. If written as single entries, the index
 /// will be an array of file offsets, and if written as a key-value tuple, the index will be a map
 /// of keys to file offsets.
-pub struct SSTableWriter<T> {
+pub struct SSTableWriter {
   pub data_writer_path: PathBuf,
   pub data_writer: BufWriter<File>,
   pub index_writer_path: PathBuf,
   pub index_writer: BufWriter<File>,
-  phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> SSTableWriter<T> {
+impl SSTableWriter {
+  pub fn write<K, V>(&mut self, entry: (K, V)) -> io::Result<()>
+  where
+    K: CborWrite,
+    V: CborWrite,
+  {
+    let initial_offset = self.data_writer.stream_position()?;
+    let writer = &mut self.data_writer;
+    let (key, value) = entry;
+
+    key
+      .cbor_write(writer)
+      .and_then(|_| value.cbor_write(writer))
+      .and_then(|_| key.cbor_write(writer))
+      .and_then(|_| initial_offset.cbor_write(writer))
+  }
+
   pub fn flush(&mut self) -> Result<()> {
     self.data_writer.flush()?;
     self.index_writer.flush()
@@ -178,42 +188,6 @@ impl<T> SSTableWriter<T> {
   }
 }
 
-impl Append<(&[u8], &[u8])> for SSTableWriter<(&[u8], &[u8])> {
-  /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
-  fn append(&mut self, entry: (&[u8], &[u8])) -> io::Result<()> {
-    let initial_offset = self.data_writer.stream_position()?;
-
-    write_cbor_bytes(&mut self.data_writer, entry.0)
-      .and_then(|_| write_cbor_bytes(&mut self.data_writer, entry.1))
-      .and_then(|_| write_cbor_bytes(&mut self.index_writer, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
-  }
-}
-
-impl Append<(&str, &str)> for SSTableWriter<(&str, &str)> {
-  /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
-  fn append(&mut self, entry: (&str, &str)) -> io::Result<()> {
-    let initial_offset = self.data_writer.stream_position()?;
-
-    write_cbor_text(&mut self.data_writer, entry.0)
-      .and_then(|_| write_cbor_text(&mut self.data_writer, entry.1))
-      .and_then(|_| write_cbor_text(&mut self.index_writer, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
-  }
-}
-
-impl Append<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
-  /// Appends a key-value pair into the data file, and the key with the file offset position into the index.
-  fn append(&mut self, entry: (u64, &[u8])) -> io::Result<()> {
-    let initial_offset = self.data_writer.stream_position()?;
-
-    write_cbor_head(&mut self.data_writer, MajorType::UnsignedInteger, entry.0)
-      .and_then(|_| write_cbor_bytes(&mut self.data_writer, entry.1))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, entry.0))
-      .and_then(|_| write_cbor_head(&mut self.index_writer, MajorType::UnsignedInteger, initial_offset))
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use crate::cbor::{cbor_binary_search_first, cbor_sort};
@@ -235,7 +209,7 @@ mod tests {
 
     let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
 
-    writer.append(("hello", "world")).unwrap();
+    writer.write(("hello", "world")).unwrap();
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<(String, String)>::from_path(TEST_FILE_NAME).unwrap();
@@ -251,7 +225,7 @@ mod tests {
 
     let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
 
-    writer.append((b"hello".as_slice(), b"world".as_slice())).unwrap();
+    writer.write((b"hello".as_slice(), b"world".as_slice())).unwrap();
     writer.close().unwrap();
 
     let mut reader = SSTableReader::<(Vec<u8>, Vec<u8>)>::from_path(TEST_FILE_NAME).unwrap();
@@ -267,7 +241,7 @@ mod tests {
 
     // Should create index file
     let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-    writer.append(("hello", "world")).unwrap();
+    writer.write(("hello", "world")).unwrap();
     writer.close().unwrap();
 
     // Should use index file
@@ -290,8 +264,8 @@ mod tests {
 
     // Should create index file
     let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
-    writer.append((b"hello".as_slice(), b"world".as_slice())).unwrap();
-    writer.append((b"foo".as_slice(), b"bar".as_slice())).unwrap();
+    writer.write((b"hello".as_slice(), b"world".as_slice())).unwrap();
+    writer.write((b"foo".as_slice(), b"bar".as_slice())).unwrap();
     writer.close().unwrap();
 
     // Should use index file
@@ -316,15 +290,13 @@ mod tests {
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
     // Should create index file
-    let mut writer = SSTableWriterBuilder::<(&[u8], &[u8])>::new(TEST_FILE_NAME)
-      .build()
-      .unwrap();
-    writer.append((b"baz", b"qux")).unwrap();
-    writer.append((b"corge", b"grault")).unwrap();
-    writer.append((b"foo", b"bar")).unwrap();
-    writer.append((b"garply", b"waldo")).unwrap();
-    writer.append((b"hello", b"world")).unwrap();
-    writer.append((b"quux", b"quuz")).unwrap();
+    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
+    writer.write((b"baz", b"qux")).unwrap();
+    writer.write((b"corge", b"grault")).unwrap();
+    writer.write((b"foo", b"bar")).unwrap();
+    writer.write((b"garply", b"waldo")).unwrap();
+    writer.write((b"hello", b"world")).unwrap();
+    writer.write((b"quux", b"quuz")).unwrap();
     writer.close().unwrap();
 
     // Should use index file
@@ -346,15 +318,13 @@ mod tests {
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
     // Should create index file
-    let mut writer = SSTableWriterBuilder::<(&str, &str)>::new(TEST_FILE_NAME)
-      .build()
-      .unwrap();
-    writer.append(("baz", "qux")).unwrap();
-    writer.append(("corge", "grault")).unwrap();
-    writer.append(("foo", "bar")).unwrap();
-    writer.append(("garply", "waldo")).unwrap();
-    writer.append(("hello", "world")).unwrap();
-    writer.append(("quux", "quuz")).unwrap();
+    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
+    writer.write(("baz", "qux")).unwrap();
+    writer.write(("corge", "grault")).unwrap();
+    writer.write(("foo", "bar")).unwrap();
+    writer.write(("garply", "waldo")).unwrap();
+    writer.write(("hello", "world")).unwrap();
+    writer.write(("quux", "quuz")).unwrap();
     writer.close().unwrap();
 
     // Should use index file
@@ -374,15 +344,13 @@ mod tests {
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
     // Should create index file
-    let mut writer = SSTableWriterBuilder::<(u64, &[u8])>::new(TEST_FILE_NAME)
-      .build()
-      .unwrap();
-    writer.append((1, b"baz")).unwrap();
-    writer.append((2, b"corge")).unwrap();
-    writer.append((3, b"foo")).unwrap();
-    writer.append((4, b"garply")).unwrap();
-    writer.append((5, b"hello")).unwrap();
-    writer.append((6, b"quux")).unwrap();
+    let mut writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
+    writer.write((1, b"baz")).unwrap();
+    writer.write((2, b"corge")).unwrap();
+    writer.write((3, b"foo")).unwrap();
+    writer.write((4, b"garply")).unwrap();
+    writer.write((5, b"hello")).unwrap();
+    writer.write((6, b"quux")).unwrap();
     writer.close().unwrap();
 
     // Should use index file
@@ -402,16 +370,14 @@ mod tests {
     fs::remove_file(TEST_INDEX_FILE_NAME).unwrap_or_default();
 
     // Should create index file
-    let mut sstable_writer = SSTableWriterBuilder::<(&[u8], &[u8])>::new(TEST_FILE_NAME)
-      .build()
-      .unwrap();
-    sstable_writer.append((b"baz", b"qux")).unwrap();
+    let mut sstable_writer = SSTableWriterBuilder::new(TEST_FILE_NAME).build().unwrap();
+    sstable_writer.write((b"baz", b"qux")).unwrap();
     for _ in 0..5 {
-      sstable_writer.append((b"foo", b"bar")).unwrap();
+      sstable_writer.write((b"foo", b"bar")).unwrap();
     }
-    sstable_writer.append((b"garply", b"waldo")).unwrap();
-    sstable_writer.append((b"hello", b"world")).unwrap();
-    sstable_writer.append((b"quux", b"quuz")).unwrap();
+    sstable_writer.write((b"garply", b"waldo")).unwrap();
+    sstable_writer.write((b"hello", b"world")).unwrap();
+    sstable_writer.write((b"quux", b"quuz")).unwrap();
     sstable_writer.close().unwrap();
 
     // Should use index file

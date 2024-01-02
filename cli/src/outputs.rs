@@ -1,6 +1,6 @@
 //! Output writer appends key-values to a file or stdout in various append-only formats.
 
-use sstables::{Append, SSTableWriter, SSTableWriterBuilder};
+use sstables::{SSTableWriter, SSTableWriterBuilder};
 use std::{
   io::{self, BufWriter, Stdout, Write},
   path::PathBuf,
@@ -16,30 +16,20 @@ pub enum OutputDestination {
   Stdout,
 }
 
-pub struct OutputWriterBuilder<T> {
+pub struct OutputWriterBuilder {
   destination: OutputDestination,
-  _phantom: std::marker::PhantomData<T>,
 }
 
 /// Builder for OutputWriter for any SSTableWriter that implements Append.
-impl<T> OutputWriterBuilder<T>
-where
-  sstables::SSTableWriter<T>: sstables::Append<T>,
-{
+impl OutputWriterBuilder {
   pub fn new(destination: OutputDestination) -> Self {
-    OutputWriterBuilder {
-      destination,
-      _phantom: std::marker::PhantomData,
-    }
+    OutputWriterBuilder { destination }
   }
 
-  pub fn build<'a>(self) -> io::Result<OutputWriter<T>>
-  where
-    T: 'a,
-  {
+  pub fn build(self) -> io::Result<OutputWriter> {
     match self.destination {
       OutputDestination::File(path) => {
-        let sstable_writer = SSTableWriterBuilder::<T>::new(path).build()?;
+        let sstable_writer = SSTableWriterBuilder::new(path).build()?;
         Ok(OutputWriter::SSTable(sstable_writer))
       }
       OutputDestination::Stdout => Ok(OutputWriter::Stdout(BufWriter::new(io::stdout()))),
@@ -47,18 +37,15 @@ where
   }
 }
 
-pub enum OutputWriter<T>
-where
-  SSTableWriter<T>: Append<T>,
-{
-  SSTable(SSTableWriter<T>),
+pub enum OutputWriter {
+  SSTable(SSTableWriter),
   Stdout(BufWriter<Stdout>),
 }
 
-impl OutputEmitter<(&str, &str)> for OutputWriter<(&str, &str)> {
+impl OutputEmitter<(&str, &str)> for OutputWriter {
   fn emit(&mut self, target: (&str, &str)) -> io::Result<()> {
     match self {
-      OutputWriter::SSTable(sstable_writer) => sstable_writer.append(target),
+      OutputWriter::SSTable(sstable_writer) => sstable_writer.write(target),
       OutputWriter::Stdout(stdout_writer) => {
         let (key, value) = target;
         writeln!(stdout_writer, "{}\t{}", key, value)?;

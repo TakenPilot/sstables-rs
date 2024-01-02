@@ -13,9 +13,7 @@ use sstable_cli::{
   outputs::{OutputDestination, OutputEmitter, OutputWriter, OutputWriterBuilder},
   util::{compare_tuples, get_min_max, is_sorted_by, is_unique},
 };
-use sstables::{
-  cbor::is_cbor_sorted, Append, FromPath, SSTableIndex, SSTableReader, SSTableWriter, SSTableWriterBuilder,
-};
+use sstables::{cbor::is_cbor_sorted, FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
 use std::{
   cmp::Reverse,
   collections::BinaryHeap,
@@ -33,10 +31,7 @@ fn get_sorted_sstable_index(index_path: &Path) -> io::Result<SSTableIndex<(Strin
   Ok(sstable_index)
 }
 
-fn get_output_writer<T: 'static>(output_path: &Option<PathBuf>) -> io::Result<OutputWriter<T>>
-where
-  SSTableWriter<T>: Append<T>,
-{
+fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> {
   let output_destination = match output_path {
     Some(output_path) => OutputDestination::File(output_path.clone()),
     None => OutputDestination::Stdout,
@@ -58,7 +53,7 @@ where
 ///
 fn merge_sorted_sstable_index_pairs(
   sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)],
-  emitter: &mut OutputWriter<(&str, &str)>,
+  emitter: &mut OutputWriter,
 ) -> io::Result<()> {
   let mut heap = BinaryHeap::new();
 
@@ -97,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Some(Commands::Append { input_paths, key, data }) => {
       for input_path in input_paths {
         let mut sstable_writer = SSTableWriterBuilder::new(input_path).build()?;
-        sstable_writer.append((key.as_str(), data.as_str()))?;
+        sstable_writer.write((key.as_str(), data.as_str()))?;
         sstable_writer.close()?;
       }
     }

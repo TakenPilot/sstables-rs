@@ -340,6 +340,13 @@ pub trait CborWrite {
   fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()>;
 }
 
+impl<const N: usize> CborWrite for &[u8; N] {
+  fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    // Clippy and Rust were fighting, so let's confuse them both.
+    write_cbor_bytes(writer, &**self)
+  }
+}
+
 impl CborWrite for &[u8] {
   fn cbor_write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
     write_cbor_bytes(writer, self)
