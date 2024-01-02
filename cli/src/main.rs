@@ -10,10 +10,12 @@ use colored::Colorize;
 use sstable_cli::{
   cmds::{get_cli, Commands},
   files::{self, create_index_path, get_file_size, get_path_str},
-  outputs::{KeyValueWriter, OutputDestination, OutputWriter, OutputWriterBuilder},
+  outputs::{OutputDestination, OutputEmitter, OutputWriter, OutputWriterBuilder},
   util::{compare_tuples, get_min_max, is_sorted_by, is_unique},
 };
-use sstables::{cbor::is_cbor_sorted, Append, FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
+use sstables::{
+  cbor::is_cbor_sorted, Append, FromPath, SSTableIndex, SSTableReader, SSTableWriter, SSTableWriterBuilder,
+};
 use std::{
   cmp::Reverse,
   collections::BinaryHeap,
@@ -31,7 +33,10 @@ fn get_sorted_sstable_index(index_path: &Path) -> io::Result<SSTableIndex<(Strin
   Ok(sstable_index)
 }
 
-fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> {
+fn get_output_writer<T: 'static>(output_path: &Option<PathBuf>) -> io::Result<OutputWriter<T>>
+where
+  SSTableWriter<T>: Append<T>,
+{
   let output_destination = match output_path {
     Some(output_path) => OutputDestination::File(output_path.clone()),
     None => OutputDestination::Stdout,
@@ -53,7 +58,7 @@ fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> 
 ///
 fn merge_sorted_sstable_index_pairs(
   sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<(String, u64)>)],
-  emitter: &mut impl KeyValueWriter,
+  emitter: &mut OutputWriter<(&str, &str)>,
 ) -> io::Result<()> {
   let mut heap = BinaryHeap::new();
 
@@ -70,7 +75,9 @@ fn merge_sorted_sstable_index_pairs(
     let (sstable, _) = &mut sstable_index_pairs[pair_index];
     sstable.seek(SeekFrom::Start(offset))?;
     let (_, value) = sstable.next().unwrap()?;
-    emitter.write(&key, &value)?;
+    let value = value.clone(); // Clone the value to ensure it lives long enough
+
+    emitter.emit((&key, &value))?;
 
     // Insert the next key from this SSTable index into the heap
     let next_index_pos = index_pos + 1;

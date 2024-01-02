@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 /// let slice = &[1, 2, 3, 4, 5];
 /// let sorted = is_sorted_by(slice, |a, b| a.cmp(b));
 /// assert_eq!(sorted, true);
-/// 
+///
 /// let slice = &[1, 2, 3, 5, 4];
 /// let sorted = is_sorted_by(slice, |a, b| a.cmp(b));
 /// assert_eq!(sorted, false);

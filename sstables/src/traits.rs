@@ -7,7 +7,7 @@ pub trait FromPath<T> {
     Self: Sized;
 }
 
-/// Appends an entry to some io.
+/// Appends an entry to some io without taking ownership.
 pub trait Append<T> {
   fn append(&mut self, entry: T) -> io::Result<()>;
 }

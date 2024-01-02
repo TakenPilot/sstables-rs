@@ -80,18 +80,18 @@ pub struct SSTableReader<T> {
   phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> Seek for SSTableReader<T> {
-  fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-    self.data_reader.seek(pos)
-  }
-}
-
 impl<T> FromPath<T> for SSTableReader<T> {
   fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
     Ok(SSTableReader {
       data_reader: BufReader::new(File::open(path)?),
       phantom: std::marker::PhantomData,
     })
+  }
+}
+
+impl<T> Seek for SSTableReader<T> {
+  fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+    self.data_reader.seek(pos)
   }
 }
 
@@ -158,5 +158,23 @@ impl Iterator for SSTableReader<String> {
         _ => Some(Err(e)),
       },
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use common_testing::{assert, setup};
+
+  #[test]
+  fn test_sstable_reader_bytes() {
+    let _lock = setup::sequential();
+    let fixture_path = "./.tmp/test.sst";
+
+    let mut reader = SSTableReader::<Vec<u8>>::from_path(fixture_path).unwrap();
+    assert::equal(reader.next(), vec![67]);
+    assert::equal(reader.next(), vec![97, 122]);
+    assert::equal(reader.next(), vec![69, 99]);
+    // assert::none(&reader.next());
   }
 }

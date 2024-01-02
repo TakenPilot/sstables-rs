@@ -63,7 +63,7 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::traits::Append;
+/// use sstables::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .build()
@@ -77,7 +77,7 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::traits::Append;
+/// use sstables::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .index_writer_path("test.index")
@@ -216,14 +216,11 @@ impl Append<(u64, &[u8])> for SSTableWriter<(u64, &[u8])> {
 
 #[cfg(test)]
 mod tests {
+  use crate::cbor::{cbor_binary_search_first, cbor_sort};
+  use crate::{FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
   use common_testing::{assert, setup};
   use std::fs;
   use std::io::SeekFrom;
-
-  use crate::cbor::{cbor_binary_search_first, cbor_sort};
-  use crate::sstable_reader::{SSTableIndex, SSTableReader};
-  use crate::sstable_writer::SSTableWriterBuilder;
-  use crate::traits::FromPath;
 
   use super::*;
 
