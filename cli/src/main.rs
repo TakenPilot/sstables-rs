@@ -75,7 +75,6 @@ fn merge_sorted_sstable_index_pairs(
     let (sstable, _) = &mut sstable_index_pairs[pair_index];
     sstable.seek(SeekFrom::Start(offset))?;
     let (_, value) = sstable.next().unwrap()?;
-    let value = value.clone(); // Clone the value to ensure it lives long enough
 
     emitter.emit((&key, &value))?;
 
