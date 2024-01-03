@@ -20,13 +20,12 @@
 //! ```
 //! use sstables::sstable_writer::SSTableWriterBuilder;
 //! use sstables::sstable_writer::SSTableWriter;
-//! use sstables::traits::Append;
 //!
 //! let mut writer = SSTableWriterBuilder::new("test")
 //!   .build()
 //!   .unwrap();
 //!
-//! writer.append(("hello", "world")).unwrap();
+//! writer.write(("hello", "world")).unwrap();
 //! ```
 //!
 //!
@@ -61,13 +60,12 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .build()
 ///  .unwrap();
 ///
-/// writer.append(("hello", "world")).unwrap();
+/// writer.write(("hello", "world")).unwrap();
 /// ```
 ///
 /// # Example
@@ -75,7 +73,6 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 /// ```
 /// use sstables::sstable_writer::SSTableWriterBuilder;
 /// use sstables::sstable_writer::SSTableWriter;
-/// use sstables::Append;
 ///
 /// let mut writer = SSTableWriterBuilder::new("test")
 ///  .index_writer_path("test.index")
@@ -83,7 +80,7 @@ const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 ///  .build()
 ///  .unwrap();
 ///
-/// writer.append(("hello", "world")).unwrap();
+/// writer.write(("hello", "world")).unwrap();
 /// ```
 pub struct SSTableWriterBuilder {
   data_writer_path: PathBuf,
@@ -154,14 +151,15 @@ impl SSTableWriter {
     V: CborWrite,
   {
     let initial_offset = self.data_writer.stream_position()?;
-    let writer = &mut self.data_writer;
+    let data_writer = &mut self.data_writer;
+    let index_writer = &mut self.index_writer;
     let (key, value) = entry;
 
     key
-      .cbor_write(writer)
-      .and_then(|_| value.cbor_write(writer))
-      .and_then(|_| key.cbor_write(writer))
-      .and_then(|_| initial_offset.cbor_write(writer))
+      .cbor_write(data_writer)
+      .and_then(|_| value.cbor_write(data_writer))
+      .and_then(|_| key.cbor_write(index_writer))
+      .and_then(|_| initial_offset.cbor_write(index_writer))
   }
 
   pub fn flush(&mut self) -> Result<()> {

@@ -9,3 +9,7 @@ edition = "2021"
 clap = { version = "4.4.12", features = ["env", "derive"] }
 colored = { version = "2.1.0" }
 sstables = { path="../sstables" }
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports", "async_futures"] }
+common-testing = "1.1.1"

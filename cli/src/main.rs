@@ -10,14 +10,13 @@ use colored::Colorize;
 use sstable_cli::{
   cmds::{get_cli, Commands},
   files::{self, create_index_path, get_file_size, get_path_str},
-  outputs::{OutputDestination, OutputEmitter, OutputWriter, OutputWriterBuilder},
+  merge::Mergeable,
+  outputs::{OutputDestination, OutputWriter, OutputWriterBuilder},
   util::{compare_tuples, get_min_max, is_sorted_by, is_unique},
 };
 use sstables::{cbor::is_cbor_sorted, FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
 use std::{
-  cmp::Reverse,
-  collections::BinaryHeap,
-  io::{self, Seek, SeekFrom},
+  io::{self},
   path::{Path, PathBuf},
 };
 
@@ -41,50 +40,6 @@ fn get_output_writer(output_path: &Option<PathBuf>) -> io::Result<OutputWriter> 
     None => OutputDestination::Stdout,
   };
   OutputWriterBuilder::new(output_destination).build()
-}
-
-/// Merge the SSTables by reading the lowest key from each index and writing it to the output
-/// file. This is a simple implementation that does not use a heap. It is O(n^2) in the number of
-/// SSTables. It is also not memory efficient, as it reads the entire index of each SSTable into
-/// memory. It is also not space efficient, as it writes the entire index of each SSTable to the
-/// output file. It is also not time efficient, as it seeks to the offset of each key-value pair
-/// in each SSTable. It is also not parallelizable, as it reads and writes to a single file. It is
-/// also not fault tolerant, as it does not handle errors.
-///
-/// Future: To use a custom sort order, use a custom tuple that implements it's own `PartialOrd` and
-/// `Ord` traits so that the `BinaryHeap` will sort the keys consistently. We would have to change
-/// this function to allow the caller to specify their own tuple types.
-///
-fn merge_sorted_sstable_index_pairs(
-  sstable_index_pairs: &mut [(SSTableReader<(String, String)>, SSTableIndex<String>)],
-  emitter: &mut OutputWriter,
-) -> io::Result<()> {
-  let mut heap = BinaryHeap::new();
-
-  // Initialize the heap with the first key from each SSTable index
-  for (pair_index, (_sstable, sstable_index)) in sstable_index_pairs.iter().enumerate() {
-    let index_pos = 0;
-    if let Some((key, offset)) = sstable_index.indices.get(index_pos) {
-      heap.push(Reverse((key.clone(), pair_index, index_pos, *offset)));
-    }
-  }
-
-  while let Some(Reverse((key, pair_index, index_pos, offset))) = heap.pop() {
-    // Process key-value pair
-    let (sstable, _) = &mut sstable_index_pairs[pair_index];
-    sstable.seek(SeekFrom::Start(offset))?;
-    let (_, value) = sstable.next().unwrap()?;
-
-    emitter.emit((&key, &value))?;
-
-    // Insert the next key from this SSTable index into the heap
-    let next_index_pos = index_pos + 1;
-    if let Some((next_key, next_offset)) = sstable_index_pairs[pair_index].1.indices.get(next_index_pos) {
-      heap.push(Reverse((next_key.clone(), pair_index, next_index_pos, *next_offset)));
-    }
-  }
-
-  Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -259,7 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       output_path,
     }) => {
       // Pull the index files of each SSTable into memory along with their File objects.
-      let mut sstable_index_pairs = input_paths
+      let sstable_index_pairs = input_paths
         .iter()
         .map(|input_path| {
           Ok((
@@ -271,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
       let mut output_writer = get_output_writer(output_path)?;
 
-      merge_sorted_sstable_index_pairs(&mut sstable_index_pairs, &mut output_writer)?;
+      sstable_index_pairs.merge(&mut output_writer)?;
     }
     Some(Commands::Validate { input_paths }) => {
       for input_path in input_paths {
