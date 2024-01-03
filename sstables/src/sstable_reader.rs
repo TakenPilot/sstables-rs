@@ -7,6 +7,7 @@ use std::path::Path;
 /// Reads and holds the indices of an SSTable in memory, so that we can seek to
 /// the correct position in the data file. We can perform binary search on the
 /// index to find the correct position.
+#[derive(Debug)]
 pub struct SSTableIndex<K> {
   pub indices: Vec<(K, u64)>,
 }
