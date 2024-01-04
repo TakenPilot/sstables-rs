@@ -7,16 +7,16 @@
 //! ```
 
 use sstable_cli::{
+  cmd,
   cmds::{get_cli, Commands},
   files::{self, create_index_path, get_path_str},
   info::get_info,
   merge::Mergeable,
-  traits::{KeyValue, TypeWrite},
+  traits::{Terminal, TypeWrite, TypeWriter},
   util::compare_tuples,
 };
-use sstables::{cbor::CborWrite, FromPath, SSTableIndex, SSTableReader, SSTableWriter, SSTableWriterBuilder};
+use sstables::{FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
 use std::{
-  fmt::Display,
   io::{self, Seek},
   path::{Path, PathBuf},
 };
@@ -44,39 +44,6 @@ fn get_sorted_sstable_index_pairs(
       ))
     })
     .collect()
-}
-
-struct Terminal {}
-
-impl<T: std::fmt::Display> TypeWrite<T> for Terminal {
-  fn write(&mut self, target: T) -> io::Result<()> {
-    println!("{}", target);
-    Ok(())
-  }
-}
-
-enum TypeWriter {
-  SSTable(SSTableWriter),
-  Terminal(Terminal),
-}
-
-impl TypeWriter {
-  pub fn new(output_path: &Option<PathBuf>) -> io::Result<TypeWriter> {
-    Ok(match output_path {
-      Some(output_path) => TypeWriter::SSTable(SSTableWriterBuilder::new(output_path).build()?),
-      None => TypeWriter::Terminal(Terminal {}),
-    })
-  }
-}
-
-impl<K: CborWrite + Display + Ord + Clone, V: CborWrite + Display> TypeWrite<(K, V)> for TypeWriter {
-  fn write(&mut self, target: (K, V)) -> io::Result<()> {
-    let (k, v) = target;
-    match self {
-      TypeWriter::SSTable(sstable_writer) => sstable_writer.write((k, v)),
-      TypeWriter::Terminal(terminal) => terminal.write(KeyValue(k, v)),
-    }
-  }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -179,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !input_path.is_file() {
           writer.write(format!("File does not exist: {}", get_path_str(input_path)))?;
         } else {
-          let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
+          let sstable_reader = SSTableReader::<(String, String)>::from_path(input_path)?;
           for result in sstable_reader {
             let (key, _) = result?;
             writer.write(key.to_string())?;
@@ -190,65 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Some(Commands::Get { input_paths, key, n }) => {
       let mut writer = Terminal {};
-      for input_path in input_paths {
-        if !input_path.is_file() {
-          writer.write(format!("File does not exist: {}", get_path_str(input_path)))?
-        } else {
-          let mut sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
-          match SSTableIndex::<String>::from_path(create_index_path(input_path)) {
-            Ok(sstable_index) => {
-              let index_pos = match sstable_index.indices.binary_search_by(|kv| kv.0.cmp(key)) {
-                Ok(x) => x,
-                Err(_) => {
-                  // Do nothing; we might be searching many files, so a missing key in this file
-                  // does not mean it's missing in another file. Don't output anything, since that
-                  // would interfere with the output they might be piping elsewhere.
-                  return Ok(());
-                }
-              };
-              let (index_key, offset) = match sstable_index.indices.get(index_pos) {
-                Some(x) => x,
-                None => {
-                  // An actual error, stop and tell them.
-                  // All indices should point to real entries in the data file.
-                  writer.write(format!("Missing index_pos: {}", index_pos))?;
-                  return Ok(());
-                }
-              };
-              sstable_reader.seek(io::SeekFrom::Start(*offset))?;
-              let mut kv_maybe = sstable_reader.next();
-              while let Some(kv_result) = kv_maybe {
-                let (key, value) = match kv_result {
-                  Ok(x) => x,
-                  Err(e) => return Err(Box::new(e)),
-                };
-
-                if &key != index_key {
-                  break;
-                }
-
-                writer.write(format!("{}: {}", key, value))?;
-                kv_maybe = sstable_reader.next();
-              }
-            }
-            Err(e) => {
-              let mut count = 0;
-              for result in sstable_reader {
-                let (k, v) = result?;
-                if &k == key {
-                  writer.write(v.to_string())?;
-                  count += 1;
-                }
-                if let Some(n) = n {
-                  if &count >= n {
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      cmd::get::<String, String>(input_paths, key.clone(), *n, &mut writer)?;
     }
 
     Some(Commands::Merge {
@@ -291,6 +200,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
 
   Ok(())
-
-  // Continued program logic goes here...
 }

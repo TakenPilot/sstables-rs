@@ -118,29 +118,6 @@ mod tests {
   use common_testing::{assert, setup};
   use sstables::{FromPath, SSTableIndex, SSTableReader, SSTableWriterBuilder};
 
-  struct MockSSTable<K, V> {
-    pub items: Vec<(K, V)>,
-    _key: std::marker::PhantomData<K>,
-    _value: std::marker::PhantomData<V>,
-  }
-
-  impl<K, V> MockSSTable<K, V> {
-    pub fn new() -> Self {
-      Self {
-        items: Vec::new(),
-        _key: std::marker::PhantomData,
-        _value: std::marker::PhantomData,
-      }
-    }
-  }
-
-  impl<K, V> TypeWrite<(K, V)> for MockSSTable<K, V> {
-    fn write(&mut self, target: (K, V)) -> io::Result<()> {
-      self.items.push(target);
-      Ok(())
-    }
-  }
-
   /// Setup the test by removing any existing files.
   fn setup_remove_test_sstables() -> io::Result<()> {
     setup::create_dir_all(".tmp")?;

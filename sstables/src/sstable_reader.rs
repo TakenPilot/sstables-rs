@@ -72,11 +72,12 @@ impl<T> Seek for SSTableReader<T> {
 /// CborRead. The iterator returns a series of tuples of (key, value). The
 /// iterator will return an error if the underlying reader returns an error, or
 /// None if the end of the file is reached.
-impl<T> Iterator for SSTableReader<(T, T)>
+impl<K, V> Iterator for SSTableReader<(K, V)>
 where
-  io::BufReader<File>: CborRead<T>,
+  io::BufReader<File>: CborRead<K>,
+  io::BufReader<File>: CborRead<V>,
 {
-  type Item = io::Result<(T, T)>;
+  type Item = io::Result<(K, V)>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let reader = &mut self.data_reader;

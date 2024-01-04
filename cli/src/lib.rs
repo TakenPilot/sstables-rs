@@ -1,3 +1,4 @@
+pub mod cmd;
 pub mod cmds;
 pub mod files;
 pub mod info;
