@@ -17,6 +17,7 @@ supports the following commands:
   number of key-value pairs, whether they have an index, the minimum and maximum keys, and
   if they are properly sorted.
 - `export`: Exports the key-value pairs in a set of SSTables to a JSON or CSV file.
+- `get`: Searches a set of SSTables for a specific key, printing out every occurance. Uses the index file if available.
 
 This particular implementation of SSTables is more general than the SSTables
 used in Apache Cassandra and Apache HBase so that it is more useful for long-term

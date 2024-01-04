@@ -189,21 +189,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Some(Commands::Get { input_paths, key, n }) => {
+      let mut writer = Terminal {};
       for input_path in input_paths {
         if !input_path.is_file() {
-          println!("File does not exist: {}", get_path_str(input_path))
+          writer.write(format!("File does not exist: {}", get_path_str(input_path)))?
         } else {
-          let sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
-          let mut count = 0;
-          for result in sstable_reader {
-            let (k, v) = result?;
-            if &k == key {
-              println!("{}", v);
-              count += 1;
+          let mut sstable_reader = sstables::SSTableReader::<(String, String)>::from_path(input_path)?;
+          match SSTableIndex::<String>::from_path(create_index_path(input_path)) {
+            Ok(sstable_index) => {
+              let index_pos = match sstable_index.indices.binary_search_by(|kv| kv.0.cmp(key)) {
+                Ok(x) => x,
+                Err(_) => {
+                  // Do nothing; we might be searching many files, so a missing key in this file
+                  // does not mean it's missing in another file. Don't output anything, since that
+                  // would interfere with the output they might be piping elsewhere.
+                  return Ok(());
+                }
+              };
+              let (index_key, offset) = match sstable_index.indices.get(index_pos) {
+                Some(x) => x,
+                None => {
+                  // An actual error, stop and tell them.
+                  // All indices should point to real entries in the data file.
+                  writer.write(format!("Missing index_pos: {}", index_pos))?;
+                  return Ok(());
+                }
+              };
+              sstable_reader.seek(io::SeekFrom::Start(*offset))?;
+              let mut kv_maybe = sstable_reader.next();
+              while let Some(kv_result) = kv_maybe {
+                let (key, value) = match kv_result {
+                  Ok(x) => x,
+                  Err(e) => return Err(Box::new(e)),
+                };
+
+                if &key != index_key {
+                  break;
+                }
+
+                writer.write(format!("{}: {}", key, value))?;
+                kv_maybe = sstable_reader.next();
+              }
             }
-            if let Some(n) = n {
-              if &count >= n {
-                break;
+            Err(e) => {
+              let mut count = 0;
+              for result in sstable_reader {
+                let (k, v) = result?;
+                if &k == key {
+                  writer.write(v.to_string())?;
+                  count += 1;
+                }
+                if let Some(n) = n {
+                  if &count >= n {
+                    break;
+                  }
+                }
               }
             }
           }
