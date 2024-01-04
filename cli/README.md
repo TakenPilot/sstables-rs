@@ -11,12 +11,12 @@ provide efficient reads and writes, as well as efficient compactions.
 The SSTables CLI provides a set of commands for managing SSTables. The CLI
 supports the following commands:
 
-- `compact`: Compacts a set of SSTables into a single SSTable.
-- `dump`: Dumps the contents of a set of SSTables to stdout or a file.
-- `merge`: Merges a set of SSTables into a single SSTable.
-- `split`: Splits a set of SSTables into multiple SSTables.
-- `stats`: Prints statistics about an SSTable.
-- `validate`: Validates an SSTable.
+- `append`: Adds a single key and value to the end of a set of SSTables.
+- `merge`: Merges a set of SSTables into a single SSTable, sorted by key, keys missing from index are removed.
+- `info`: Prints information about a set of SSTables, such as their size, the
+  number of key-value pairs, whether they have an index, the minimum and maximum keys, and
+  if they are properly sorted.
+- `export`: Exports the key-value pairs in a set of SSTables to a JSON or CSV file.
 
 This particular implementation of SSTables is more general than the SSTables
 used in Apache Cassandra and Apache HBase so that it is more useful for long-term
@@ -43,30 +43,54 @@ for debugging or repairing data from many types of data sources. For example:
 
 - `sort`: Sorts a set of SSTables by key, producing a new SSTable and index that
   are properly sorted by key.
-- `info`: Prints information about a set of SSTables, such as their size, the
-  number of key-value pairs, whether they have an index, the minimum and maximum keys, and
-  if they are properly sorted.
 - `keys`: Prints the keys in a set of SSTables.
 - `values`: Prints the values in a set of SSTables.
-- `export`: Exports the key-value pairs in a set of SSTables to a JSON or CSV file.
-- `import`: Imports the key-value pairs in a JSON or CSV file to a set of SSTables.
-- `sample`: Samples the key-value pairs in a set of SSTables.
-- `head`: Prints the first N key-value pairs in a set of SSTables.
-- `tail`: Prints the last N key-value pairs in a set of SSTables.
-- `min`: Finds the minimum key in a set of SSTables.
-- `max`: Finds the maximum key in a set of SSTables.
-- `count`: Counts the number of key-value pairs in a set of SSTables.
-- `range`: Prints the key-value pairs in a set of SSTables that are within a
-  given range.
-- `histogram`: Prints a histogram of the keys in a set of SSTables.
-- `diff`: Compares two sets of SSTables, printing the keys that are present in
-  one set but not the other
-- `intersect`: Intersects two sets of SSTables, printing the keys that are
-  present in both sets.
-- `union`: Unions two sets of SSTables, printing the keys that are present in
-  either set.
-- `subtract`: Subtracts two sets of SSTables, printing the keys that are
-  present in the first set but not the second set.
+- `index`: Prints the contents of index files, which are keys and file offsets of a set of SSTables.
+- `dump`: Dumps the contents of a set of SSTables to stdout or a file.
+
+Example `keys` output:
+
+```
+a
+b
+c
+d
+e
+f
+```
+
+Example `values` output:
+
+```
+1
+2
+3
+4
+5
+6
+```
+
+Example `dump` command:
+
+```
+(0) "a": "1"
+(4) "b": "2"
+(8) "c": "3"
+(12) "d": "4"
+(16) "e": "5"
+(20) "f": "6"
+```
+
+Example `index` command:
+
+```
+"a": 0
+"b": 4
+"c": 8
+"d": 12
+"e": 16
+"f": 20
+```
 
 # Command line operations
 
@@ -178,6 +202,26 @@ there are any duplicate keys.
 
 - Bloom filters
 - Secondary indices
+- `split`: Splits a set of SSTables into multiple SSTables.
+- `validate`: Validates an SSTable.
+- `import`: Imports the key-value pairs in a JSON or CSV file to a set of SSTables.
+- `sample`: Samples the key-value pairs in a set of SSTables.
+- `head`: Prints the first N key-value pairs in a set of SSTables.
+- `tail`: Prints the last N key-value pairs in a set of SSTables.
+- `min`: Finds the minimum key in a set of SSTables.
+- `max`: Finds the maximum key in a set of SSTables.
+- `count`: Counts the number of key-value pairs in a set of SSTables.
+- `range`: Prints the key-value pairs in a set of SSTables that are within a
+  given range.
+- `histogram`: Prints a histogram of the keys in a set of SSTables.
+- `diff`: Compares two sets of SSTables, printing the keys that are present in
+  one set but not the other
+- `intersect`: Intersects two sets of SSTables, printing the keys that are
+  present in both sets.
+- `union`: Unions two sets of SSTables, printing the keys that are present in
+  either set.
+- `subtract`: Subtracts two sets of SSTables, printing the keys that are
+  present in the first set but not the second set.
 - Exporting to Parquet, ORC, Arrow, Avro, and other columnar formats
 - Exporting to SQLite, RocksDB, LMDB, and other databases
 - Exporting to CSV, JSON, and other formats

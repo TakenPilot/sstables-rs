@@ -27,6 +27,15 @@ pub enum Commands {
     #[arg(short, long, value_name = "DATA")]
     data: String,
   },
+  Dump {
+    /// The file to export
+    #[arg(value_name = "INPUT_PATHS")]
+    input_paths: Vec<PathBuf>,
+
+    /// The format to export to
+    #[arg(short, long, value_name = "FORMAT")]
+    format: Option<String>,
+  },
   /// Exports the contents of the SSTable to another format.
   Export {
     /// The file to export
@@ -70,7 +79,8 @@ pub enum Commands {
     #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
   },
-  /// Sort and merge one or more SSTables.
+  /// Merge one or more SSTables into a single SSTable.
+  /// Currently also sorts, but later will assume data is already sorted.
   Merge {
     /// One or more files to sort and merge.
     #[arg(value_name = "INPUT_PATHS")]
@@ -80,10 +90,17 @@ pub enum Commands {
     #[arg(short, long, value_name = "OUTPUT_PATH")]
     output_path: Option<PathBuf>,
   },
-  Validate {
-    /// The file to validate.
+  /// Sort one or more SSTables into a single SSTable.
+  /// Later, there will be optimizations to handle larger indices.
+  /// Currently same behavior as Merge.
+  Sort {
+    /// One or more files to sort and merge.
     #[arg(value_name = "INPUT_PATHS")]
     input_paths: Vec<PathBuf>,
+
+    /// Optional output file. If unset, writes to stdout.
+    #[arg(short, long, value_name = "OUTPUT_PATH")]
+    output_path: Option<PathBuf>,
   },
   Values {
     /// The file to get values from.
